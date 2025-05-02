@@ -1,0 +1,5 @@
+---
+- name: Restart RKE2
+  systemd:
+    name: rke2-server
+    state: restarted

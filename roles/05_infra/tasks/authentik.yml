@@ -1,0 +1,374 @@
+---
+- name: Deploy Authentik
+  when: deploy_authentik | bool
+  block:
+    - name: Check if Authentik is already installed
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: authentik-server
+        namespace: authentik
+      register: authentik_check
+      ignore_errors: true
+
+    - name: Fetch Authentik Helm chart information
+      kubernetes.core.helm_info:
+        name: authentik
+        release_namespace: authentik
+      register: authentik_helm_info
+      ignore_errors: true
+
+    - name: Deploy or upgrade Authentik
+      kubernetes.core.helm:
+        name: authentik
+        chart_ref: authentik/authentik
+        chart_version: "{{ authentik_version }}"
+        release_namespace: authentik
+        create_namespace: true
+        values: "{{ lookup('template', 'values-authentik.yml.j2') | from_yaml }}"
+        wait: true
+        wait_timeout: 5m
+      register: authentik_deploy
+      retries: 3
+      delay: 30
+
+    - name: Add user credentials to secret
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: authentik-login
+            namespace: authentik
+          data:
+            authentik_admin_user: "{{ email | b64encode }}"
+            authentik_admin_pw: "{{ vault_authentik_user_password | b64encode }}"
+            authentik_api_token: "{{ vault_authentik_api_token | b64encode }}"
+
+- name: Get required variables from authentik to create application
+  when: deploy_authentik | bool
+  block:
+    - name: Get flow identifiers via Authentik API
+      ansible.builtin.uri:
+        url: "https://authentik.{{ domain }}/api/v3/flows/instances/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        return_content: true
+      register: flow_instances_response
+      until: flow_instances_response.status == 200
+      retries: 10
+      delay: 30
+      changed_when: false
+      failed_when: flow_instances_response.status not in [200]
+
+    - name: Extract relevant flow IDs
+      ansible.builtin.set_fact:
+        default_authorization_flow_id: >-
+          {{
+            (flow_instances_response.json.results | selectattr('slug', 'equalto', 'default-provider-authorization-implicit-consent') | list | first).pk
+          }}
+        default_invalidation_flow_id: >-
+          {{
+            (flow_instances_response.json.results | selectattr('slug', 'equalto', 'default-provider-invalidation-flow') | list | first).pk
+          }}
+      when:
+        - flow_instances_response.json.results is defined
+        - flow_instances_response.json.results | length > 0
+
+    - name: Get OAuth2 scope mappings
+      ansible.builtin.uri:
+        url: "https://authentik.{{ domain }}/api/v3/propertymappings/provider/scope/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+          Accept: "application/json"
+        return_content: true
+        validate_certs: true
+        status_code: [200]
+      register: scope_mappings_response
+      until: scope_mappings_response.status == 200
+      retries: 6
+      delay: 10
+      changed_when: false
+      failed_when:
+        - scope_mappings_response.status != 200
+        - scope_mappings_response.json.results | length == 0
+
+    - name: Define required OAuth2 scopes
+      ansible.builtin.set_fact:
+        required_scopes:
+          email: "goauthentik.io/providers/oauth2/scope-email"
+          openid: "goauthentik.io/providers/oauth2/scope-openid"
+          profile: "goauthentik.io/providers/oauth2/scope-profile"
+
+    - name: Verify required OAuth2 scope mappings exist
+      ansible.builtin.assert:
+        that:
+          - required_scopes.values() | difference(scope_mappings_response.json.results | map(attribute='managed') | list) | length == 0
+        fail_msg: "One or more required OAuth2 scope mappings are missing in Authentik"
+        success_msg: "All required OAuth2 scope mappings are present in Authentik"
+
+    - name: Extract UUIDs for required OAuth2 scopes
+      ansible.builtin.set_fact:
+        scope_uuids: "{{ scope_uuids | default({}) | combine({ item.key: (scope_mappings_response.json.results | selectattr('managed', 'equalto', item.value) | map(attribute='pk') | first ) }) }}"
+      loop: "{{ required_scopes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Set individual scope UUID facts
+      ansible.builtin.set_fact:
+        email_scope_uuid: "{{ scope_uuids.email }}"
+        openid_scope_uuid: "{{ scope_uuids.openid }}"
+        profile_scope_uuid: "{{ scope_uuids.profile }}"
+
+    - name: Get all authentication flows
+      ansible.builtin.uri:
+        url: "https://authentik.{{ domain }}/api/v3/flows/instances/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        return_content: true
+      register: all_flows_response
+      until: all_flows_response.status == 200
+      retries: 3
+      delay: 10
+      changed_when: false
+      failed_when: all_flows_response.status not in [200]
+
+    - name: Extract flow IDs by slug
+      ansible.builtin.set_fact:
+        flow_ids: "{{ flow_ids | default({}) | combine({item.slug: item.pk}) }}"
+      loop: "{{ all_flows_response.json.results }}"
+      when: deploy_authentik | bool and all_flows_response is defined and all_flows_response.json.results is defined
+      loop_control:
+        label: "{{ item.slug }}"
+
+- name: Create RSA Certificate
+  when: deploy_authentik | bool
+  block:
+    - name: Define Api url
+      ansible.builtin.set_fact:
+        authentik_api_url: "https://authentik.{{ domain }}/api/v3"
+
+    - name: Get existing certificates from Authentik
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/crypto/certificatekeypairs/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        return_content: true
+      register: existing_cert_keypairs
+      until: existing_cert_keypairs.status == 200
+      retries: 3
+      delay: 10
+
+    # Print debug information to verify what we receive
+    - name: Debug certificates
+      ansible.builtin.debug:
+        msg: "{{ existing_cert_keypairs.json.results | length }} certificates found"
+
+    # Filter RSA keys with boolean check
+    - name: Check if RSA keys exist
+      ansible.builtin.set_fact:
+        rsa_certs: "{{ existing_cert_keypairs.json.results | 
+                     selectattr('private_key_type', 'defined') | 
+                     selectattr('private_key_type', 'equalto', 'rsa') | 
+                     list }}"
+        has_rsa_keys: "{{ (existing_cert_keypairs.json.results | 
+                        selectattr('private_key_type', 'defined') | 
+                        selectattr('private_key_type', 'equalto', 'rsa') | 
+                        list) | length > 0 }}"
+
+    # Debug RSA certificates
+    - name: Debug RSA certificates
+      ansible.builtin.debug:
+        msg:
+          - "Found {{ rsa_certs | length }} RSA certificates"
+          - "has_rsa_keys = {{ has_rsa_keys }}"
+          - "First RSA cert (if any): {{ rsa_certs[0].name if rsa_certs else 'None' }}"
+
+    # Use the first RSA certificate if any exist
+    - name: Use existing RSA key
+      ansible.builtin.set_fact:
+        signing_key_uid: "{{ rsa_certs[0].pk }}"
+      when: has_rsa_keys
+
+    # Create a new certificate only if no RSA certificates exist
+    - name: Create RSA signing key only if none exist
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/crypto/certificatekeypairs/generate/"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        body:
+          name: "jwt-signing-{{ lookup('password', '/dev/null chars=lowercase,digits length=6') }}"
+          common_name: "jwt-signing-{{ lookup('password', '/dev/null chars=lowercase,digits length=6') }}"
+          subject_alt_names: []
+          validity_days: 5000
+          key_type: "rsa"
+          key_length: 2048
+        body_format: json
+        status_code: [200, 201]
+      register: create_signing_key_response
+      when: not has_rsa_keys
+
+    # Set the certificate ID from newly created key
+    - name: Set signing key ID from newly created key
+      ansible.builtin.set_fact:
+        signing_key_uid: "{{ create_signing_key_response.json.pk }}"
+      when: not has_rsa_keys and create_signing_key_response is defined
+
+- name: Configure apps
+  when: deploy_authentik | bool
+  block:
+    - name: Define application configurations
+      ansible.builtin.set_fact:
+        authentik_apps:
+          - name: ArgoCD
+            slug: argocd
+            namespace: argocd
+            deploy_condition: deploy_argocd | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://argocd.{{ domain }}/api/dex/callback"
+              - matching_mode: strict
+                url: "http://localhost:8085/auth/callback"
+            meta_launch_url: "https://argocd.{{ domain }}/auth/login"
+            open_in_new_tab: true
+            secret_name: argocd-authentik-credentials
+            sub_mode: null
+            signing_key: true
+            authentication_flow: "{{ flow_ids['default-authentication-flow'] }}"
+            additional_config: []
+
+          - name: Grafana
+            slug: grafana
+            namespace: monitoring
+            deploy_condition: deploy_grafana | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: regex
+                url: "https://grafana.{{ domain }}/login/generic_oauth"
+            meta_launch_url: "https://grafana.{{ domain }}/"
+            open_in_new_tab: true
+            secret_name: grafana-authentik-credentials
+            sub_mode: null
+            signing_key: false
+            additional_config: []
+
+          - name: Gitea
+            slug: gitea
+            namespace: gitea
+            deploy_condition: deploy_gitea | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://git.{{ domain }}/user/oauth2/authentik/callback"
+            meta_launch_url: "https://git.{{ domain }}/"
+            open_in_new_tab: true
+            secret_name: gitea-authentik-secret
+            sub_mode: user_email
+            signing_key: false
+            additional_config:
+              - name: gitea-authentik-secret
+                type: Opaque
+                format: stringData
+                template_type: gitea
+
+          - name: Donetick
+            slug: donetick
+            namespace: donetick
+            deploy_condition: deploy_donetick | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://donetick.{{ domain }}/auth/oauth2"
+            meta_launch_url: "https://donetick.{{ domain }}/"
+            open_in_new_tab: true
+            secret_name: donetick-authentik-credentials
+            sub_mode: user_email
+            signing_key: false
+            additional_config: []
+
+          - name: Jellyfin
+            slug: jellyfin
+            namespace: jellyfin
+            deploy_condition: deploy_jellyfin | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://jellyfin.{{ domain }}/sso/OID/redirect/authentik"
+            meta_launch_url: "https://jellyfin.{{ domain }}/sso/OID/start/authentik"
+            open_in_new_tab: true
+            secret_name: jellyfin-authentik-credentials
+            sub_mode: user_email
+            signing_key: true
+            additional_config: []
+
+          - name: OpenWebui
+            slug: openwebui
+            namespace: open-webui
+            deploy_condition: deploy_open_webui | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://openwebui.{{ domain }}/oauth/oidc/callback"
+            meta_launch_url: "https://openwebui.{{ domain }}"
+            open_in_new_tab: true
+            secret_name: openwebui-authentik-credentials
+            sub_mode: user_email
+            signing_key: true
+            additional_config: []
+
+          - name: Paperless-ngx
+            slug: paperless-ngx
+            namespace: paperless-ngx
+            deploy_condition: deploy_paperless_ngx | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://paperless.{{ domain }}/accounts/oidc/authentik/login/callback/"
+            meta_launch_url: "https://paperless.{{ domain }}"
+            open_in_new_tab: true
+            secret_name: paperless-authentik-credentials
+            sub_mode: user_email
+            signing_key: true
+            additional_config: []
+
+          - name: Audiobookshelf
+            slug: audiobookshelf
+            namespace: audiobookshelf
+            deploy_condition: deploy_audiobookshelf | bool
+            client_type: confidential
+            redirect_uris:
+              - matching_mode: strict
+                url: "https://audiobookshelf.{{ domain }}/auth/openid/callback"
+              - matching_mode: strict
+                url: "https://audiobookshelf.{{ domain }}/auth/openid/mobile-redirect"
+            meta_launch_url: "https://audiobookshelf.{{ domain }}"
+            open_in_new_tab: true
+            secret_name: audiobookshelf-authentik-credentials
+            sub_mode: user_email
+            signing_key: true
+            additional_config: []
+
+    - name: Filter active applications
+      ansible.builtin.set_fact:
+        active_apps: "{{ authentik_apps | selectattr('deploy_condition', 'defined') | selectattr('deploy_condition') | list }}"
+
+    # Process each application one by one with a different approach to avoid file creation
+    - name: Process each application
+      ansible.builtin.include_tasks:
+        file: authentik_process_app.yml
+      vars:
+        app: "{{ item }}"
+      loop: "{{ active_apps }}"
+      loop_control:
+        label: "{{ item.name }}"

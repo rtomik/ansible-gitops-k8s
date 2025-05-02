@@ -1,0 +1,15 @@
+token: {{ vault_rke2_token }}
+tls-san:
+- {{ rke2_hostname }}
+- {{ kube_vip_address }}
+{% for addr in node_addresses %}- {{ addr }}
+{% endfor %}
+write-kubeconfig-mode: "600"
+etcd-expose-metrics: true
+cni:
+  - cilium
+disable:
+  - rke2-ingress-nginx
+  - rke2-snapshot-validation-webhook
+  - rke2-snapshot-controller
+  - rke2-snapshot-controller-crd

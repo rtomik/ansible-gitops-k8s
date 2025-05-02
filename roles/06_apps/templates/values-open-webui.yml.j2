@@ -1,0 +1,33 @@
+open-webui:
+  ingress:
+    enabled: true
+    class: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    host: openwebui.{{ domain }}
+
+  persistence:
+      enabled: true
+      size: 2Gi
+      storageClass: "longhorn"
+
+{% if deploy_authentik %}
+  extraEnvVars:
+    - name: ENABLE_OAUTH_SIGNUP
+      value: "true"
+    - name: OAUTH_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: openwebui-authentik-credentials
+          key: authentik_client_id
+    - name: OAUTH_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: openwebui-authentik-credentials
+          key: authentik_client_secret
+    - name: OAUTH_PROVIDER_NAME
+      value: "authentik"
+    - name: OPENID_PROVIDER_URL
+      value: "https://authentik.{{ domain }}/application/o/openwebui/.well-known/openid-configuration"
+{% endif %}      

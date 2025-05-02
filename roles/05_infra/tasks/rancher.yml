@@ -1,0 +1,34 @@
+---
+- name: Deploy rancher
+  when: deploy_rancher | bool
+  block:
+    - name: Check if Rancher is already installed
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: rancher
+        namespace: cattle-system
+      register: rancher_check
+      ignore_errors: true
+
+    - name: Deploy Rancher
+      kubernetes.core.helm:
+        name: rancher
+        chart_ref: rancher-stable/rancher
+        chart_version: "{{ rancher_version }}"
+        release_namespace: cattle-system
+        create_namespace: true
+        values: "{{ lookup('template', 'values-rancher.yml.j2') | from_yaml }}"
+      when: rancher_check.resources | length == 0
+
+    - name: Wait for Rancher to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: cattle-system
+        label_selectors:
+          - app=rancher
+      register: rancher_pods
+      until: rancher_pods.resources | length > 0 and rancher_pods.resources | map(attribute='status.phase') | list | unique == ['Running']
+      retries: 20
+      delay: 30
+

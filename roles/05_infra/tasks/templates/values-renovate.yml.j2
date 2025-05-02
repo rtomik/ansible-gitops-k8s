@@ -1,0 +1,36 @@
+---
+renovate:
+  redis:
+    enabled: true
+
+    persistence:
+      enabled: true
+      storageClass: "longhorn"
+      accessModes:
+        - ReadWriteOnce
+      size: 8Gi
+
+  envFrom:
+    - secretRef:
+        name: gitea-api-token
+
+  renovate:
+    cronjob:
+      schedule: "0 2 * * *"  # Run daily at 2 AM
+
+    # Configuration for Renovate
+    config: |
+      {
+        "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+        "extends": ["config:base"],
+        "platform": "gitea",
+        "endpoint": "https://git.{{ domain }}/api/v1/",
+        "token": "$api_token",
+        "repositories": ["{{ git_organization_name }}/{{ git_repo_name }}"],
+        "onboarding": true,
+        "onboardingConfig": {
+          "extends": ["config:base"]
+        },
+        "gitAuthor": "Renovate Bot <renovate@{{ domain }}>"
+      }
+

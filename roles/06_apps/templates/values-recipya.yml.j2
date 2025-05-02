@@ -1,0 +1,51 @@
+recipya:
+  image:
+    repository: reaper99/recipya
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: "v1.2.2"
+
+  config:
+    email:
+      address: ""
+      sendgrid: ""
+      existingSecret: ""
+      addressKey: "email"
+      sendgridKey: "sendgrid"
+    
+    documentIntelligence:
+      endpoint: ""
+      key: ""
+      existingSecret: ""
+      endpointKey: "di_endpoint"
+      keyKey: "di_key"
+    
+    server:
+      port: 8078
+      autologin: false
+      is_demo: false
+      is_prod: true
+      no_signups: false
+      url: "https://recipya.{{ domain }}"    
+
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-recipya-headers@kubernetescrd
+    hosts:
+      - host: recipya.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+        - recipya.{{ domain }}
+
+  persistence:
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: "longhorn"
+    retain: true

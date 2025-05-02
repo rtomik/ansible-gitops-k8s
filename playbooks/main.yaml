@@ -1,0 +1,101 @@
+- name: 01 Create vault and install collections
+  hosts: localhost
+  connection: local
+  become: true
+  roles:
+    - role: 01_local
+      tags:
+        - local
+
+- name: 02 Check if ansible user exists and create if necessary
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_user: "root"
+  tasks:
+    - name: Try to connect as ansible user
+      wait_for_connection:
+        timeout: 5
+      ignore_errors: true
+      vars:
+        ansible_user: "{{ user }}"
+      register: connection_test
+      tags: config
+
+    - name: Set fact for initial setup
+      set_fact:
+        initial_setup: "{{ connection_test is failed }}"
+      tags: config
+    
+    - name: Debug connection status
+      debug:
+        msg: "Initial setup needed: {{ initial_setup }}"
+      tags: config
+
+    - name: Create ansible user
+      include_role:
+        name: 02_create_user
+      when: initial_setup | default(true)  # Default to true to ensure it runs
+      tags: config
+      
+    - name: Ensure ansible user is accessible
+      wait_for_connection:
+        delay: 5
+        timeout: 10
+      vars:
+        ansible_user: "{{ user }}"
+      register: final_connection_test
+      ignore_errors: true
+      tags: config
+
+    - name: Debug final connection status
+      debug:
+        msg: "Final connection test: {{ 'Success' if final_connection_test is success else 'Failed' }}"
+      tags: config
+
+- name: 03 Prepare and harden servers
+  hosts: all
+  become: true
+  vars:
+    ansible_user: "ansible"
+  tasks:
+    - name: Debug connection
+      debug:
+        msg: "Connected as ansible user to {{ inventory_hostname }}"
+      tags: config
+
+  roles:
+    - role: 03_base_config
+      tags:
+        - config
+
+- name: 04 Deploy rke2 cluster
+  hosts: rke2_cluster
+  become: true
+  serial: 1
+  vars:
+    ansible_user: "ansible"
+  roles:
+    - role: 04_rke2_server
+      tags:
+        - rke2
+
+- name: 05 Deploy infrastructure applications
+  hosts: rke2_cluster[0]
+  become: true
+  vars:
+    ansible_user: "ansible"
+  roles:
+    - role: 05_infra
+      tags:
+        - infra
+
+- name: 06 Deploy applications
+  hosts: rke2_cluster[0]
+  become: true
+  vars:
+    ansible_user: "ansible"
+  roles:
+    - role: 06_apps
+      tags:
+        - apps        

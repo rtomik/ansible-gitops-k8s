@@ -1,0 +1,33 @@
+prowlarr:
+  image:
+    repository: ghcr.io/hotio/prowlarr
+    tag: release-1.33.3.5008
+    pullPolicy: IfNotPresent
+
+  env:
+    TZ: {{ timezone }}
+  
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      hosts:
+        - host: prowlarr.{{ domain }}
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+      tls:
+        - hosts:
+            - prowlarr.{{ domain }}
+
+  
+  persistence:
+    config:
+      enabled: true
+      accessMode: ReadWriteOnce
+      size: 2Gi
+      storageClass: longhorn
+      mountPath: /config  

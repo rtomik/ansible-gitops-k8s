@@ -1,0 +1,150 @@
+replicaCount: 1
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+  hosts:
+    - host: git.{{ domain }}
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - git.{{ domain }}
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: longhorn
+  accessModes:
+    - ReadWriteOnce
+
+redis-cluster:
+  enabled: false
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+{% if groups['master'] | length <= 1 %}
+# Single node configuration
+postgresql-ha:
+  enabled: false
+
+postgresql:
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        database: gitea
+        username: gitea
+        password: "{{ vault_vault_gitea_postgresql_password }}"
+        postgresPassword: "{{ vault_vault_gitea_postgresql_password }}"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: longhorn
+
+gitea:
+  admin:
+    existingSecret: gitea-admin-secret
+{% if deploy_authentik %}
+  oauth:
+    - name: "authentik"
+      provider: "openidConnect"
+      existingSecret: gitea-authentik-secret
+      autoDiscoverUrl: "https://authentik.{{ domain }}/application/o/gitea/.well-known/openid-configuration"
+      iconUrl: https://authentik.{{ domain }}/static/dist/assets/icons/icon.svg
+      scopes: "email profile"
+{% endif %}
+  config:
+    server:
+      ROOT_URL: "https://git.{{ domain }}"
+      DOMAIN: git.{{ domain }}
+      SSH_DOMAIN: git.{{ domain }}
+    database:
+      DB_TYPE: postgres
+      HOST: gitea-postgresql.gitea.svc.cluster.local:5432
+      NAME: gitea
+      USER: gitea
+      PASSWD: "{{ vault_vault_gitea_postgresql_password }}"
+    cache:
+      ADAPTER: redis
+      HOST: gitea-redis-master.gitea.svc.cluster.local:6379
+    session:
+      PROVIDER: redis
+      PROVIDER_CONFIG: gitea-redis-master.gitea.svc.cluster.local:6379
+    queue:
+      TYPE: redis
+      CONN_STR: redis://gitea-redis-master.gitea.svc.cluster.local:6379/0
+    oauth2_client:
+      ENABLE_AUTO_REGISTRATION: true
+    indexer:
+      ISSUE_INDEXER_TYPE: bleve
+      REPO_INDEXER_ENABLED: true
+    log:
+      LEVEL: debug
+
+{% else %}
+# High-availability configuration
+
+postgresql-ha:
+  enabled: true
+  global:
+    postgresql:
+      database: gitea
+      username: gitea
+      password: "{{ vault_gitea_postgresql_password }}"
+  postgresql:
+    repmgrPassword: "{{ vault_gitea_repmgr_password }}"
+    postgresPassword: "{{ vault_gitea_postgresql_password }}"
+    password: "{{ vault_gitea_postgresql_password }}"
+  pgpool:
+    adminPassword: "{{ vault_gitea_pgpool_password }}"
+  service:
+    ports:
+      postgresql: 5432
+  persistence:
+    size: 10Gi
+    storageClass: longhorn
+
+gitea:
+  admin:
+    existingSecret: gitea-admin-secret
+{% if deploy_authentik %}
+  oauth:
+    - name: "authentik"
+      provider: "openidConnect"
+      existingSecret: gitea-authentik-secret
+      autoDiscoverUrl: "https://authentik.{{ domain }}/application/o/gitea/.well-known/openid-configuration"
+      iconUrl: https://authentik.{{ domain }}/static/dist/assets/icons/icon.svg
+      scopes: "email profile"
+{% endif %}
+  config:
+    server:
+      ROOT_URL: "https://git.{{ domain }}"
+      DOMAIN: git.{{ domain }}
+      SSH_DOMAIN: git.{{ domain }}
+    oauth2_client:
+      ENABLE_AUTO_REGISTRATION: true
+    indexer:
+      ISSUE_INDEXER_TYPE: bleve
+      REPO_INDEXER_ENABLED: true
+    log:
+      LEVEL: debug
+{% endif %}

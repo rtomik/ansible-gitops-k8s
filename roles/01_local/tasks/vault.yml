@@ -1,0 +1,90 @@
+- name: Check if required files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  with_items:
+    - "{{ vault_file }}"
+    - "{{ vault_password_file }}"
+  register: files_check
+
+# Create vault password file if it doesn't exist
+- name: Create vault password file
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    dest: "{{ vault_password_file }}"
+    mode: '0600'
+  when: not files_check.results[1].stat.exists
+
+# Block to handle vault content creation
+- name: Handle vault content creation
+  when: not files_check.results[0].stat.exists
+  block:
+    # Generate random tokens and passwords
+    - name: Generate tokens and secrets
+      ansible.builtin.command: "openssl rand -base64 {{ item.length }}"
+      with_items:
+        - { name: 'rke2_token', length: 48 }
+        - { name: 'authentik_secret', length: 25 }
+        - { name: 'authentik_pg_pw', length: 15 }
+        - { name: 'authentik_user_pw', length: 15 }
+        - { name: 'authentik_api_token', length: 15 }
+        - { name: 'paperless_pg_pw', length: 15 }
+        - { name: 'gitea_postgresql_password', length: 15 }
+        - { name: 'gitea_repmgr_password', length: 15 }
+        - { name: 'gitea_pgpool_password', length: 15 }
+        - { name: 'gitea_admin_password', length: 15 }
+      register: generated_tokens
+      changed_when: false
+
+    # Create vault content fact
+    - name: Create vault content
+      ansible.builtin.set_fact:
+        vault_content: |
+          vault_rke2_token: "{{ generated_tokens.results[0].stdout }}"
+          vault_authentik_secret_key: "{{ generated_tokens.results[1].stdout }}"
+          vault_authentik_postgresql_password: "{{ generated_tokens.results[2].stdout }}"
+          vault_authentik_user_password: "{{ generated_tokens.results[3].stdout }}"
+          vault_authentik_api_token: "{{ generated_tokens.results[4].stdout }}"
+          vault_paperless_pg_pw: "{{ generated_tokens.results[4].stdout }}"
+          vault_gitea_postgresql_password: "{{ generated_tokens.results[5].stdout }}"
+          vault_gitea_repmgr_password: "{{ generated_tokens.results[6].stdout }}"
+          vault_gitea_pgpool_password: "{{ generated_tokens.results[7].stdout }}"
+          vault_gitea_admin_password: "{{ generated_tokens.results[7].stdout }}"
+
+    # Write unencrypted vault file
+    - name: Create temporary unencrypted vault file
+      ansible.builtin.copy:
+        content: "{{ vault_content }}"
+        dest: "/tmp/temp_vault.yml"
+      changed_when: false
+
+    # Encrypt vault file
+    - name: Encrypt vault file
+      ansible.builtin.command: >
+        ansible-vault encrypt
+        --vault-password-file {{ vault_password_file }}
+        --output {{ vault_file }}
+        /tmp/temp_vault.yml
+      register: encrypt_result
+      changed_when: encrypt_result.rc == 0
+
+    # Remove temporary file
+    - name: Remove temporary unencrypted vault file
+      ansible.builtin.file:
+        path: "/tmp/temp_vault.yml"
+        state: absent
+      changed_when: false
+
+# Debug information
+- name: Display vault status
+  ansible.builtin.debug:
+    msg:
+      - "Vault file already exists at: {{ vault_file }}"
+      - "Vault password file located at: {{ vault_password_file }}"
+  when: files_check.results[0].stat.exists
+
+- name: Display information about new vault
+  ansible.builtin.debug:
+    msg:
+      - "New vault file created at: {{ vault_file }}"
+      - "Vault password file located at: {{ vault_password_file }}"
+  when: not files_check.results[0].stat.exists

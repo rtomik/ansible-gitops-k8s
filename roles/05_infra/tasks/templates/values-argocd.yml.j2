@@ -1,0 +1,101 @@
+---
+global:
+  domain: argocd.{{ domain }}
+
+redis-ha:
+  enabled: true
+  replicas: {{ [groups['master'] | length, 3] | min }}
+  haproxy:
+    replicas: {{ [groups['master'] | length, 3] | min }}
+
+controller:
+  replicas: 1
+
+repoServer:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+
+applicationSet:
+  replicas: 2
+
+server:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    extraTls:
+      - hosts:
+        - argocd.{{ domain }}
+
+configs:
+  params:
+    server.insecure: true
+  cm:
+    url: https://argocd.{{ domain }}
+
+    resource.customizations: |
+      networking.k8s.io/Ingress:
+        health.lua: |
+          hs = {}
+          hs.status = "Healthy"
+          return hs
+
+    dex.config: |
+      connectors:
+      - type: oidc
+        id: authentik
+        name: authentik
+        config:
+          issuer: https://authentik.{{ domain }}/application/o/argocd/
+          clientID: $authentik_client_id
+          clientSecret: $authentik_client_secret
+          redirectURI: https://argocd.{{ domain }}/api/dex/callback
+          insecureSkipVerify: true
+          scopes:
+            - openid
+            - profile
+            - email
+
+  rbac:
+    defaultPolicy: 'role:readonly'
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:org-admin, applications, *, */*, allow
+      p, role:org-admin, clusters, *, *, allow
+      p, role:org-admin, repositories, *, *, allow
+      p, role:org-admin, projects, *, *, allow
+      g, admin, role:admin
+
+dex:
+  enabled: true
+  serviceAccount:
+    create: true
+  env:
+    - name: authentik_client_id
+      valueFrom:
+        secretKeyRef:
+          name: argocd-authentik-credentials
+          key: authentik_client_id
+    - name: authentik_client_secret
+      valueFrom:
+        secretKeyRef:
+          name: argocd-authentik-credentials
+          key: authentik_client_secret
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 10m
+      memory: 128Mi

@@ -1,0 +1,25 @@
+jellyseerr:
+  env:
+    - name: TZ
+      value: {{ timezone }}
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: jellyseerr.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - jellyseerr.{{ domain }}
+
+  persistence:
+    enabled: true
+    storageClass: "longhorn"
+    accessMode: ReadWriteOnce
+    size: 1Gi

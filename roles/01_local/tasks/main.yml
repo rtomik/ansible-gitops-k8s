@@ -1,0 +1,10 @@
+---
+- import_tasks: collections.yml
+  tags:
+    - local
+    - local:collections
+
+- import_tasks: vault.yml
+  tags:
+    - local
+    - local:vault

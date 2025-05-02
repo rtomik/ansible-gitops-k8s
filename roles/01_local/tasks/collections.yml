@@ -1,0 +1,24 @@
+---
+- name: Create requirements.yml file
+  ansible.builtin.copy:
+    content: |
+      ---
+      collections:
+        - name: kubernetes.core
+          version: 2.3.2
+        - name: community.general
+          version: 5.0.0
+    dest: "{{ playbook_dir }}/requirements.yml"
+
+- name: Check installed collections
+  ansible.builtin.command: ansible-galaxy collection list
+  register: installed_collections
+  changed_when: false
+
+- name: Install Ansible collections
+  ansible.builtin.command: ansible-galaxy collection install -r requirements.yml
+  when: >
+    "kubernetes.core:2.3.2" not in installed_collections.stdout or
+    "community.general:5.0.0" not in installed_collections.stdout
+  register: galaxy_result
+  changed_when: "'Installing' in galaxy_result.stdout"

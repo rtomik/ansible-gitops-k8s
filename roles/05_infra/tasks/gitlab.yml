@@ -1,0 +1,67 @@
+---
+- name: Fetch GitLab Helm chart information
+  kubernetes.core.helm_info:
+    name: gitlab
+    release_namespace: gitlab
+  register: gitlab_helm_info
+  ignore_errors: true
+  when: deploy_gitlab | bool
+
+- name: Deploy or upgrade GitLab
+  kubernetes.core.helm:
+    name: gitlab
+    chart_ref: gitlab/gitlab
+    chart_version: "{{ gitlab_version }}"
+    release_namespace: gitlab
+    create_namespace: true
+    values: "{{ lookup('template', 'values-gitlab.yml.j2') | from_yaml }}"
+  when: deploy_gitlab | bool
+  register: gitlab_deploy
+
+- name: Wait for GitLab to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: gitlab
+    label_selectors:
+      - app=webservice
+  register: gitlab_pods
+  until: >
+    gitlab_pods.resources is defined and
+    gitlab_pods.resources | length > 0 and
+    (gitlab_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+  retries: 30
+  delay: 30
+  when: deploy_gitlab | bool
+
+- name: Ensure SSH config directory exists
+  ansible.builtin.file:
+    path: ~/.ssh
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  when: deploy_gitlab | bool
+
+- name: Ensure SSH config file exists
+  ansible.builtin.file:
+    path: ~/.ssh/config
+    state: touch
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+  changed_when: false
+  delegate_to: localhost
+  when: deploy_gitlab | bool
+
+- name: Add GitLab SSH host configuration
+  ansible.builtin.blockinfile:
+    path: ~/.ssh/config
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - GITLAB SSH"
+    state: present
+    block: |
+      Host ssh.gitlab.{{ domain }}
+        Port 30022
+        User git
+        IdentityFile ~/.ssh/id_rsa
+        StrictHostKeyChecking no
+  delegate_to: localhost
+  when: deploy_gitlab | bool

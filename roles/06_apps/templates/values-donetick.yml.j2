@@ -1,0 +1,45 @@
+donetick:
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: donetick.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - donetick.{{ domain }}
+
+  persistence:
+    enabled: true
+    storageClass: "longhorn"
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    annotations: {}          
+  
+  config:
+    jwt:
+      secretKey: "jwtSecret" # The key in the secret where JWT secret is stored
+      secret: "FXJCM0ldr5F53z67qq7QoL5ZOlbSCIXAIPvYDZy" # Only used if existingSecret is not set
+      session_time: 168h
+      max_refresh: 168h
+
+    # OAuth2 configuration
+    oauth2:
+      # Direct configuration
+      client_id: ""
+      client_secret: ""
+      # Secret configuration - alternative to direct configuration
+      existingSecret: "donetick-authentik-credentials" # Name of existing Kubernetes secret
+      clientIdKey: "authentik_client_id"  # Key in the secret for client ID
+      clientSecretKey: "authentik_client_secret" # Key in the secret for client secret
+      # Other OAuth2 settings
+      auth_url: "https://authentik.{{ domain }}/application/o/authorize/"
+      token_url: "https://authentik.{{ domain }}/application/o/token/"
+      user_info_url: "https://authentik.{{ domain }}/application/o/userinfo/"
+      redirect_url: "https://donetick.{{ domain }}/auth/oauth2"
+      name: "Authentik"      

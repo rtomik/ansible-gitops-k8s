@@ -1,0 +1,110 @@
+---
+
+
+# ----- Required variables --------- #
+
+# Time zone configuration
+timezone: "America/New_York"  # Change this to your desired time zone, e.g., "America/New_York"
+
+# Domain configuration
+# Create A records:
+# *.<domain>, Answer <kube_vip_address> ex. 192.168.1.200
+domain: <DOMAIN>
+email: <EMAIL>
+
+# Cloudflare
+# If you want to use TLS certificates on apps enable cloudflare and define API token
+# Cloudflare api token settings:
+# Permissions: Zone - DNS - Edit; Zone - Zone - Edit
+# Zone Resources: Include - All Zones
+enable_cloudflare: false
+cloudflare_api_token: "<cloudflare api>"
+tls_secret_name: "wildcard-{{ domain }}-tls"
+
+# Git
+# Choose your git repo for argocd
+deploy_gitea: true
+git_organization_name: "homelab"
+git_repo_name: "argocd"
+deploy_gitlab: false
+
+# Define which app to deploy
+# Change to false if you dont want to deploy the app
+# Monitoring
+deploy_prometheus: true
+deploy_grafana: true
+deploy_loki: true
+
+# infrastructure
+deploy_rancher: true
+deploy_authentik: true
+deploy_renovate: true
+
+# Apps
+deploy_audiobookshelf: true
+deploy_homeassistant: true
+deploy_recipya: true
+deploy_open_webui: true
+deploy_jellyfin: true
+deploy_arr: true
+deploy_homepage: true
+deploy_donetick: true
+deploy_paperless_ngx: true
+
+# ----- Optional variables --------- #
+
+# RKE2 cluster variables
+rke2_version: "v1.32.3+rke2r1"
+install_rke2_type: "server"
+kube_vip_version: "v0.9.1"
+kube_vip_address: "192.168.1.200"
+rke2_hostname: "rke2.{{ domain }}"
+
+# Helm chart versions
+# Infrastructure
+traefik_version: 34.4.1
+certmanager_version: 1.16.3
+argocd_version: 7.8.15
+longhorn_version: 1.8.1
+authentik_version: 2024.12.2
+rancher_version: 2.10.1
+metallb_version: 0.14.9
+gitlab_version: 8.8.0
+gitea_version: 11.0.1
+reflector_version: 7.1.288
+renovate_version: 39.251.0
+
+# Monitoring
+prometheus_stack_version: 70.4.1
+prometheus_crds_version: 19.0.0
+grafana_version: 8.8.5
+loki_version: 6.24.1
+promtail_version: 6.16.5
+
+# Apps
+jellyfin_version: 2.3.0
+homepage_version: 2.0.2
+audiobookshelf_version: 0.0.1
+openwebui_version: 5.24.0
+donetick_version: 1.0.1
+tandoor_version: 0.9.9
+paperless_ngx_version: 0.24.1
+recipya_version: 0.0.2
+radarr_version: 1.15.1
+sonarr_version: 1.10.1
+prowlarr_version: 1.41.1
+qbittorrent_version: 0.4.1
+jellyseerr_version: 0.0.1
+
+# Server configuration
+perform_full_upgrade: true
+disable_ipv6: false
+
+# Define user which will run ansible playbooks on target machine
+user: ansible
+ansible_user: "{{ user }}"
+ansible_initial_user: root
+
+# Vault
+vault_file: "../group_vars/vault.yml"
+vault_password_file: "../.vault"

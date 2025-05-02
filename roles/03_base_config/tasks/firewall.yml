@@ -1,0 +1,44 @@
+---
+
+- name: Ensure all required RKE2 ports are open in firewall
+  block:
+    - name: Allow RKE2 tcp Ports in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '53'
+        - '123'
+        - '80'
+        - '443'
+        - '179'
+        - '2379'  # etcd client
+        - '2380'  # etcd peer
+        - '9345'  # RKE2 server
+        - '6443'  # Kubernetes API
+        - '9153'
+        - '9100'
+        - '9300'
+        - '10250' # Kubelet
+      when: inventory_hostname in groups['master']
+
+    - name: Allow UDP Ports in UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: udp
+      loop:
+        - '53'
+        - '80'
+        - '443'
+        - '7946'
+        - '9153'
+      when: inventory_hostname in groups['master']
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+      when: inventory_hostname in groups['master']

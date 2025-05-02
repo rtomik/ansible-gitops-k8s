@@ -1,0 +1,89 @@
+paperless-ngx:
+  env:
+      TZ: "{{ timezone }}"
+      PAPERLESS_URL: "https://paperless.{{ domain }}"
+      PAPERLESS_ALLOWED_HOSTS: "paperless.{{ domain }}"
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://*.{{ domain }},https://paperless.{{ domain }}"
+      PAPERLESS_CORS_ALLOWED_HOSTS: "https://paperless.{{ domain }}"
+      PAPERLESS_TRUSTED_PROXIES: "*"
+      PAPERLESS_SECRET_KEY:
+
+{% if deploy_authentik %}      
+      PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+      PAPERLESS_SOCIALACCOUNT_PROVIDERS: >
+          {
+            "openid_connect": {
+              "APPS": [
+                {
+                  "provider_id": "authentik",
+                  "name": "Authentik",
+                  "client_id": "$authentik_client_id",
+                  "secret": "$authentik_client_secret",
+                  "settings": {
+                    "server_url": "https://authentik.{{ domain }}/application/o/paperless-ngx/.well-known/openid-configuration"
+                  }
+                }
+              ],
+              "OAUTH_PKCE_ENABLED": "True"
+            }
+          }
+  envFrom: 
+    - secretRef:
+        name: paperless-authentik-credentials
+{% endif %}        
+
+  ingress:
+    main:
+      enabled: true
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      hosts:
+        - host: paperless.{{ domain }}
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - paperless.{{ domain }}
+
+  postgresql:
+    enabled: true
+    auth:
+      database: paperless
+      postgresPassword: "{{ vault_paperless_pg_pw }}"
+    primary:
+      persistence:
+        enabled: false
+        storageClass: "longhorn"
+        size: 8Gi
+
+  persistence:
+    data:
+      enabled: true
+      retain: true
+      mountPath: /usr/src/paperless/data
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    media:
+      enabled: true
+      retain: true
+      mountPath: /usr/src/paperless/media
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 8Gi
+    export:
+      enabled: true
+      retain: true
+      mountPath: /usr/src/paperless/export
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    consume:
+      enabled: true
+      retain: true
+      mountPath: /usr/src/paperless/consume
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 4Gi

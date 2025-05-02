@@ -1,0 +1,214 @@
+homepage:
+  config:
+    bookmarks:
+      - Developer:
+          - Github:
+              - abbr: GH
+                href: https://github.com/
+          - Icons:
+              - abbr: IC
+                href: https://github.com/homarr-labs/dashboard-icons/tree/main/svg
+    services:
+      - Infrastructure:
+{% if deploy_rancher %}
+        - Rancher:
+            href: https://rancher.{{ domain }}/
+            description: Kubernetes Management
+            icon: /icons/rancher.svg
+{% endif %}
+        - ArgoCD:
+            href: https://argocd.{{ domain }}
+            description: GitOps CD tool for Kubernetes
+            icon: /icons/argo.svg
+{% if deploy_authentik %}
+        - Authentik:
+            href: https://authentik.{{ domain }}/
+            description: SSO Provider
+            icon: /icons/authentik.svg
+{% endif %}
+{% if deploy_gitlab %}
+        - GitLab:
+            href: https://gitlab.{{ domain }}/
+            description: Git Repository Manager
+            icon: /icons/gitlab.svg
+{% endif %}
+{% if deploy_gitea %}
+        - Gitea:
+            href: https://git.{{ domain }}/
+            description: Git Repository Manager
+            icon: /icons/gitea.svg
+{% endif %}
+        - Longhorn:
+            href: https://longhorn.{{ domain }}/
+            description: Cloud Native Storage
+            icon: /icons/longhorn.svg
+{% if deploy_arr %}
+        - qBittorrent:
+            href: https://qbittorrent.{{ domain }}
+            description: Indexer
+            icon: /icons/qbittorrent.svg      
+{% endif %}
+      - Monitoring:
+        - Prometheus:
+            href: https://prometheus.{{ domain }}/
+            description: Monitoring System
+            icon: /icons/prometheus.svg
+{% if deploy_grafana %}
+        - Grafana:
+            href: https://grafana.{{ domain }}/
+            description: Analytics & Monitoring
+            icon: /icons/grafana.svg
+{% endif %}
+            
+      - Media:
+{% if deploy_jellyfin %}
+        - Jellyfin:
+            href: https://jellyfin.{{ domain }}
+            description: Media System
+            icon: /icons/jellyfin.svg
+{% endif %}
+{% if deploy_audiobookshelf %}
+        - Audiobookshelf:
+            href: https://audiobookshelf.{{ domain }}
+            description: Self-hosted audiobook and podcast server
+            icon: /icons/bookstack.svg
+{% endif %}
+{% if deploy_arr %}      
+        - Sonarr:
+            href: https://sonarr.{{ domain }}
+            description: TV Shows
+            icon: /icons/sonarr.svg
+        - Radarr:
+            href: https://radarr.{{ domain }}
+            description: Movies
+            icon: /icons/radarr.svg        
+        - Prowlarr:
+            href: https://prowlarr.{{ domain }}
+            description: Indexer
+            icon: /icons/prowlarr.svg                                     
+        - Jellyseerr:
+            href: https://jellyseerr.{{ domain }}
+            description: Requests manager
+            icon: /icons/jellyseerr.svg                 
+{% endif %}
+      - Apps:
+{% if deploy_homeassistant %}
+        - Home Assistant:
+            href: https://home.{{ domain }}/
+            description: Home Automation
+            icon: /icons/home-assistant.svg
+{% endif %}
+{% if deploy_donetick %}
+        - Donetick:
+            href: https://donetick.{{ domain }}/
+            description: Task Management
+            icon: /icons/donetick.svg
+{% endif %}
+{% if deploy_paperless_ngx %}
+        - Paperless-ngx:
+            href: https://paperless.{{ domain }}/
+            description: Document management
+            icon: /icons/paperless.svg
+{% endif %}
+{% if deploy_open_webui %}
+        - Open WebUI:
+            href: https://openwebui.{{ domain }}/
+            description: 
+            icon: /icons/open-webui.svg
+{% endif %}
+{% if deploy_recipya %}
+        - Recipya:
+            href: https://recipya.{{ domain }}/
+            description: Recipe Manager
+            icon: 
+{% endif %}
+
+    widgets:
+      - kubernetes:
+          cluster:
+            show: true
+            cpu: true
+            memory: true
+            showLabel: true
+            label: "cluster"
+          nodes:
+            show: true
+            cpu: true
+            memory: true
+            showLabel: true
+      - search:
+          provider: duckduckgo
+          target: _blank
+      - datetime:
+        text_size: xl
+        format:
+            timeStyle: short
+            hourCycle: h23
+
+    kubernetes:
+      mode: cluster
+    settings:
+      title: Homepage
+
+      background:
+        image: /icons/background.jpg
+        blur: sm 
+        saturate: 100 
+        brightness: 50
+        opacity: 100
+
+      theme: dark
+      color: slate
+      useEqualHeights: true
+
+      layout:
+        Infrastructure:
+          icon: mdi-auto-fix-#FFFFFF
+        Monitoring:
+          icon: mdi-list-status-#FFFFFF
+        Media:
+          icon: mdi-auto-fix-#FFFFFF
+        Media Management:
+          icon: mdi-auto-fix-#FFFFFF
+          header: true
+          style: row
+          columns: 4
+        Apps:
+          icon: mdi-cog-play-#FFFFFF
+          header: true
+
+
+  persistence:
+    icons:
+      enabled: true
+      type: pvc
+      mountPath: /app/public/icons
+      accessMode: ReadWriteOnce
+      size: 1Gi
+      storageClass: longhorn
+
+  env:
+    - name: HOMEPAGE_ALLOWED_HOSTS
+      value: homepage.{{ domain }}
+
+  serviceAccount:
+    create: true
+    name: homepage
+
+  enableRbac: true
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      hosts:
+        - host: homepage.{{ domain }}
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - homepage.{{ domain }}

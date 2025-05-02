@@ -1,0 +1,212 @@
+- name: Ensure required directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/rancher/rke2
+    - /var/lib/rancher/rke2/server/manifests
+
+- name: Collect IP addresses of all master nodes
+  set_fact:
+    node_addresses: >-
+      {{ groups['master'] | map('extract', hostvars, ['ansible_host']) | list }}
+
+- name: Add VIP and hostname to /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ kube_vip_address }} {{ rke2_hostname }}"
+    state: present
+
+- name: Deploy RKE2 on primary server
+  when: inventory_hostname == groups['master'][0]
+  block:
+    - name: Check if RKE2 systemd service exists
+      ansible.builtin.shell: |
+        systemctl list-unit-files | grep -q '^rke2-server.service' && echo "present" || echo "absent"
+      register: rke2_service_state
+      changed_when: false
+
+    - name: Template primary RKE2 config
+      ansible.builtin.template:
+        src: rke2_primary_config.yaml.j2
+        dest: /etc/rancher/rke2/config.yaml
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart RKE2
+
+    - name: Download RKE2 installation script
+      ansible.builtin.get_url:
+        url: https://get.rke2.io
+        dest: /tmp/install-rke2.sh
+        mode: '0755'
+      when: rke2_service_state.stdout != "present"
+
+    - name: Install RKE2 using downloaded script
+      ansible.builtin.command: >
+        /tmp/install-rke2.sh
+      environment:
+        INSTALL_RKE2_TYPE: server
+        INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+      args:
+        creates: /usr/local/bin/rke2-server
+      notify: Restart RKE2
+      when: rke2_service_state.stdout != "present"
+
+    - name: Enable and start RKE2
+      ansible.builtin.systemd:
+        name: rke2-server.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Import kubeconfig and wait for node to be Ready
+      block:
+        - name: Copy kubeconfig to ~/.kube/config
+          ansible.builtin.copy:
+            src: /etc/rancher/rke2/rke2.yaml
+            dest: /root/.kube/config
+            remote_src: true
+            mode: '0600'
+            owner: root
+            group: root
+
+        - name: Wait for master node to be Ready
+          kubernetes.core.k8s_info:
+            kind: Node
+            field_selectors:
+              - metadata.name={{ inventory_hostname }}
+          register: node_status
+          until: >-
+            node_status.resources is defined and
+            node_status.resources | length > 0 and
+            (node_status.resources |
+            selectattr('status.conditions', 'defined') |
+            map(attribute='status.conditions') | flatten |
+            selectattr('type', 'equalto', 'Ready') |
+            selectattr('status', 'equalto', 'True') | list | length > 0)
+          retries: 20
+          delay: 15
+
+    - name: Get kubeconfig from primary node
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: rke2_kubeconfig
+
+    - name: Store kubeconfig locally with kube-vip address
+      ansible.builtin.copy:
+        content: "{{ hostvars[groups['master'][0]]['rke2_kubeconfig']['content'] | b64decode | replace('https://127.0.0.1:6443', 'https://' + kube_vip_address + ':6443') }}"
+        dest: "{{ playbook_dir }}/../rke-kubeconfig.yaml"
+        mode: '0600'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Install kube-vip manifest
+      block:
+
+        - name: Download kube-vip RBAC manifest
+          ansible.builtin.get_url:
+            url: "https://kube-vip.io/manifests/rbac.yaml"
+            dest: "/tmp/kube-vip-rbac.yaml"
+            mode: '0644'
+          register: rbac_download
+
+        - name: Apply kube-vip RBAC
+          kubernetes.core.k8s:
+            state: present
+            src: "/tmp/kube-vip-rbac.yaml"
+          when: rbac_download is succeeded
+
+        - name: Copy kube-vip manifest to RKE2 manifests directory
+          ansible.builtin.template:
+            src: "kube-vip-daemonset.yaml.j2"
+            dest: "/var/lib/rancher/rke2/server/manifests/kube-vip.yaml"
+            mode: '0644'
+            owner: root
+            group: root
+
+        - name: Wait for kube-vip pods to be ready
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: kube-system
+            label_selectors:
+              - app.kubernetes.io/name=kube-vip-ds
+          register: kube_vip_pods
+          until: >-
+            kube_vip_pods.resources is defined and
+            kube_vip_pods.resources | length > 0 and
+            (kube_vip_pods.resources |
+            selectattr('status.containerStatuses', 'defined') |
+            map(attribute='status.containerStatuses') | flatten |
+            selectattr('ready', 'equalto', true) | list | length > 0)
+          retries: 10
+          delay: 10
+
+- name: Deploy RKE2 on secondary servers
+  when: inventory_hostname != groups['master'][0]
+  block:
+    - name: Check if RKE2 systemd service exists
+      ansible.builtin.shell: |
+        systemctl list-unit-files | grep -q '^rke2-server.service' && echo "present" || echo "absent"
+      register: rke2_service_state
+      changed_when: false
+
+    - name: Template peer RKE2 config (join via VIP)
+      ansible.builtin.template:
+        src: rke2_peer_config.yaml.j2
+        dest: /etc/rancher/rke2/config.yaml
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart RKE2
+
+    - name: Download RKE2 installation script
+      ansible.builtin.get_url:
+        url: https://get.rke2.io
+        dest: /tmp/install-rke2.sh
+        mode: '0755'
+      when: rke2_service_state.stdout != "present"
+
+    - name: Install RKE2 using script if not installed
+      ansible.builtin.command: /tmp/install-rke2.sh
+      environment:
+        INSTALL_RKE2_TYPE: server
+        INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+      args:
+        creates: /etc/systemd/system/rke2-server.service
+      notify: Restart RKE2
+      when: rke2_service_state.stdout != "present"
+
+    - name: Enable and start RKE2
+      ansible.builtin.systemd:
+        name: rke2-server
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Update kubeconfig on all master nodes
+      ansible.builtin.copy:
+        content: "{{ hostvars[groups['master'][0]]['rke2_kubeconfig']['content'] | b64decode | replace('https://127.0.0.1:6443', 'https://' + kube_vip_address + ':6443') }}"
+        dest: "/root/.kube/config"
+        mode: '0600'
+        owner: root
+        group: root
+      when: inventory_hostname in groups['master']
+
+    - name: Wait for node to be Ready in Kubernetes
+      kubernetes.core.k8s_info:
+        kind: Node
+        field_selectors:
+          - metadata.name={{ inventory_hostname }}
+      register: node_status
+      until: >-
+        node_status.resources is defined and
+        node_status.resources | length > 0 and
+        (node_status.resources |
+        selectattr('status.conditions', 'defined') |
+        map(attribute='status.conditions') | flatten |
+        selectattr('type', 'equalto', 'Ready') |
+        selectattr('status', 'equalto', 'True') | list | length > 0)
+      retries: 20
+      delay: 15

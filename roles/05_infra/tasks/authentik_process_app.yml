@@ -1,0 +1,181 @@
+---
+# authentik_process_app.yml - Processing for a single Authentik application
+- name: Create Authentik Provider
+  block:
+    - name: "Check if OAuth2 Provider exists for {{ app.name }}"
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/providers/oauth2/?name=Provider%20for%20{{ app.name | urlencode }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        return_content: true
+      register: check_provider_response
+      until: check_provider_response.status == 200
+      retries: 3
+      delay: 10
+      changed_when: false
+      failed_when: check_provider_response.status not in [200, 404]
+
+    - name: Set provider exists fact
+      ansible.builtin.set_fact:
+        provider_exists: "{{ check_provider_response.json.pagination.count > 0 if check_provider_response.status == 200 else false }}"
+
+    # Modified part of authentik_process_app.yml
+    - name: "Prepare OAuth2 provider body for {{ app.name }}"
+      ansible.builtin.set_fact:
+        oauth2_provider_body:
+          name: "Provider for {{ app.name }}"
+          slug: "provider-for-{{ app.slug }}"
+          client_type: "{{ app.client_type }}"
+          authorization_flow: "{{ default_authorization_flow_id }}"
+          invalidation_flow: "{{ default_invalidation_flow_id }}"
+          property_mappings:
+            - "{{ email_scope_uuid }}"
+            - "{{ openid_scope_uuid }}"
+            - "{{ profile_scope_uuid }}"
+          redirect_uris: "{{ app.redirect_uris }}"
+          access_code_validity: "minutes=1"
+          refresh_token_validity: "days=30"
+          id_token_validity: "minutes=60"
+          client_id: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+          client_secret: "{{ lookup('password', '/dev/null length=80 chars=ascii_letters,digits') }}"
+
+    - name: "Add sub_mode to OAuth2 provider body if specified"
+      ansible.builtin.set_fact:
+        oauth2_provider_body: "{{ oauth2_provider_body | combine({'sub_mode': app.sub_mode}) }}"
+      when: app.sub_mode is defined and app.sub_mode is not none
+
+    - name: "Add signing key to OAuth2 provider body if needed"
+      ansible.builtin.set_fact:
+        oauth2_provider_body: "{{ oauth2_provider_body | combine({'signing_key': signing_key_uid}) }}"
+      when: app.signing_key | default(false)
+
+    - name: "Add authentication_flow to OAuth2 provider body if specified"
+      ansible.builtin.set_fact:
+        oauth2_provider_body: "{{ oauth2_provider_body | combine({'authentication_flow': app.authentication_flow}) }}"
+      when: app.authentication_flow is defined and app.authentication_flow is not none
+
+    - name: "Create OAuth2 Provider for {{ app.name }}"
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/providers/oauth2/"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        body: "{{ oauth2_provider_body | to_json }}"
+        body_format: json
+      register: create_provider_response
+      changed_when: create_provider_response.status == 201
+      failed_when: create_provider_response.status not in [200, 201]
+      when: not provider_exists
+
+    - name: Save client credentials
+      ansible.builtin.set_fact:
+        client_id: >-
+          {{
+            (check_provider_response.json.results[0].client_id if check_provider_response.json.results | length > 0
+              else create_provider_response.json.client_id)
+          }}
+        client_secret: >-
+          {{
+            (check_provider_response.json.results[0].client_secret if check_provider_response.json.results | length > 0
+              else create_provider_response.json.client_secret)
+          }}
+        provider_id: >-
+          {{
+            (check_provider_response.json.results[0].pk if check_provider_response.json.results | length > 0
+              else create_provider_response.json.pk)
+          }}
+
+    - name: "Check if namespace exists for {{ app.name }}"
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: "{{ app.namespace }}"
+      register: namespace_info
+      ignore_errors: true
+
+    - name: "Create namespace {{ app.name }}"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ app.namespace }}"
+      when: namespace_info.resources | length == 0
+
+    - name: "Add user credentials to secret {{ app.secret_name }}"
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ app.secret_name }}"
+            namespace: "{{ app.namespace }}"
+          data:
+            authentik_client_id: "{{ client_id | b64encode }}"
+            authentik_client_secret: "{{ client_secret | b64encode }}"
+
+# Process additional configuration for Gitea
+- name: "Create Gitea additional configuration"
+  when: app.slug == 'gitea'
+  block:
+    - name: Set Gitea config data
+      ansible.builtin.set_fact:
+        gitea_data:
+          key: "{{ client_id }}"
+          secret: "{{ client_secret }}"
+
+    - name: Create Gitea OAuth configuration secret
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: gitea-authentik-secret
+            namespace: "{{ app.namespace }}"
+          type: Opaque
+          stringData: "{{ gitea_data }}"
+
+- name: Create authentik Application
+  block:
+    - name: "Check if Authentik application exists {{ app.name }}"
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/core/applications/?slug={{ app.slug }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        return_content: true
+      register: check_app_response
+      until: check_app_response.status == 200
+      retries: 5
+      delay: 10
+      changed_when: false
+      failed_when: check_app_response.status not in [200, 404]
+
+    - name: Set application exists fact
+      ansible.builtin.set_fact:
+        app_exists: "{{ check_app_response.json.pagination.count > 0 if check_app_response.status == 200 else false }}"
+
+    - name: "Create Authentik application {{ app.name }}"
+      ansible.builtin.uri:
+        url: "{{ authentik_api_url }}/core/applications/"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+          Content-Type: "application/json"
+        body: "{{ authentik_app_body | to_json }}"
+        body_format: json
+      register: create_app_response
+      changed_when: create_app_response.status == 201
+      failed_when: create_app_response.status not in [200, 201]
+      when: not app_exists
+      vars:
+        authentik_app_body:
+          name: "{{ app.name }}"
+          slug: "{{ app.slug }}"
+          provider: "{{ provider_id }}"
+          meta_launch_url: "{{ app.meta_launch_url }}"
+          open_in_new_tab: "{{ app.open_in_new_tab | default(true) }}"
+          policy_engine_mode: "{{ app.policy_engine_mode | default('any') }}"

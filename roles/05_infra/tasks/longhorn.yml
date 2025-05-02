@@ -1,0 +1,84 @@
+---
+- name: Check if Longhorn is already installed
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: longhorn-driver-deployer
+    namespace: longhorn-system
+  register: longhorn_check
+  ignore_errors: true
+
+- name: Fetch Longhorn Helm chart information
+  kubernetes.core.helm_info:
+    name: longhorn
+    release_namespace: longhorn-system
+  register: longhorn_helm_info
+  ignore_errors: true
+
+- name: Deploy or upgrade Longhorn
+  kubernetes.core.helm:
+    name: longhorn
+    chart_ref: longhorn/longhorn
+    chart_version: "{{ longhorn_version }}"
+    release_namespace: longhorn-system
+    create_namespace: true
+    wait: true
+    wait_timeout: 10m
+    values: "{{ lookup('template', 'values-longhorn.yml.j2') | from_yaml }}"
+  register: longhorn_deploy
+  until: longhorn_deploy is succeeded
+  retries: 3
+  delay: 30
+
+- name: Wait for Longhorn to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: longhorn-system
+    label_selectors:
+      - app=longhorn-manager
+  register: longhorn_pods
+  until: >
+    longhorn_pods.resources | length > 0 and
+    (longhorn_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+  retries: 20
+  delay: 30
+  when: longhorn_deploy is changed
+
+- name: Ensure Longhorn is the default StorageClass
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: longhorn
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: driver.longhorn.io
+
+- name: Create ingress for longhorn
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: longhorn
+        namespace: longhorn-system
+        annotations:
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      spec:
+        ingressClassName: traefik
+        tls:
+          - hosts:
+              - longhorn.{{ domain }}
+        rules:
+          - host: longhorn.{{ domain }}
+            http:
+              paths:
+                - path: /
+                  pathType: ImplementationSpecific
+                  backend:
+                    service:
+                      name: longhorn-frontend
+                      port:
+                        number: 80

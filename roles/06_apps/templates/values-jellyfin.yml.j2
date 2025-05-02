@@ -1,0 +1,24 @@
+jellyfin:
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: jellyfin.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - jellyfin.{{ domain }}
+
+  persistence:
+    config:
+      enabled: true
+      mountPath: /config
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 1Gi

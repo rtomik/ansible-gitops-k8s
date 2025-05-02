@@ -1,0 +1,226 @@
+---
+- name: Get git api token
+  block:
+    - name: Get Gitea API token from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: gitea-api-token
+        namespace: argocd
+      register: gitea_token_secret
+
+    - name: Set API token fact
+      ansible.builtin.set_fact:
+        gitea_api_token: "{{ gitea_token_secret.resources[0].data.api_token | b64decode }}"
+      no_log: true
+      when: gitea_token_secret.resources is defined and gitea_token_secret.resources | length > 0
+
+    - name: Verify API token was retrieved
+      ansible.builtin.fail:
+        msg: "Failed to retrieve Gitea API token from Kubernetes secret"
+      when: gitea_api_token is not defined or gitea_api_token | length == 0
+
+# Main playbook for GitOps app deployment
+- name: Deploy apps via GitOps
+  vars:
+    # App definitions - add new apps here
+    app_definitions:
+      audiobookshelf:
+        enabled: "{{ deploy_audiobookshelf }}"
+        chart_name: "audiobookshelf"
+        version: "{{ audiobookshelf_version }}"
+        repo: "https://gitlab.com/api/v4/projects/57546317/packages/helm/release"
+        namespace: "audiobookshelf"
+      open-webui:
+        enabled: "{{ deploy_open_webui }}"
+        chart_name: "open-webui"
+        version: "{{ openwebui_version }}"
+        repo: "https://helm.openwebui.com/"
+        namespace: "open-webui"
+      homepage:
+        enabled: "{{ deploy_homepage }}"
+        chart_name: "homepage"
+        version: "{{ homepage_version }}"
+        repo: "https://jameswynn.github.io/helm-charts"
+        namespace: "homepage"
+      donetick:
+        enabled: "{{ deploy_donetick }}"
+        chart_name: "donetick"
+        version: "{{ donetick_version }}"
+        repo: "https://rtomik.github.io/helm-charts"
+        namespace: "donetick"
+      jellyfin:
+        enabled: "{{ deploy_jellyfin }}"
+        chart_name: "jellyfin"
+        version: "{{ jellyfin_version }}"
+        repo: "https://jellyfin.github.io/jellyfin-helm"
+        namespace: "jellyfin"
+      paperless-ngx:
+        enabled: "{{ deploy_paperless_ngx }}"
+        chart_name: "paperless-ngx"
+        version: "{{ paperless_ngx_version }}"
+        repo: "https://charts.gabe565.com"
+        namespace: "paperless-ngx"
+      recipya:
+        enabled: "{{ deploy_recipya }}"
+        chart_name: "recipya"
+        version: "{{ recipya_version }}"
+        repo: "https://rtomik.github.io/helm-charts"
+        namespace: "recipya"
+      radarr:
+        enabled: "{{ deploy_arr }}"
+        chart_name: "radarr"
+        version: "{{ radarr_version }}"
+        repo: "https://charts.pree.dev"
+        namespace: "arr"
+      sonarr:
+        enabled: "{{ deploy_arr }}"
+        chart_name: "sonarr"
+        version: "{{ sonarr_version }}"
+        repo: "https://charts.pree.dev"
+        namespace: "arr"
+      prowlarr:
+        enabled: "{{ deploy_arr }}"
+        chart_name: "prowlarr"
+        version: "{{ prowlarr_version }}"
+        repo: "https://charts.pree.dev"
+        namespace: "arr"
+      qbittorrent:
+        enabled: "{{ deploy_arr }}"
+        chart_name: "qbittorrent"
+        version: "{{ qbittorrent_version }}"
+        repo: "https://charts.gabe565.com"
+        namespace: "arr"
+      jellyseerr:
+        enabled: "{{ deploy_arr }}"
+        chart_name: "jellyseerr"
+        version: "{{ jellyseerr_version }}"
+        repo: "https://rtomik.github.io/helm-charts"
+        namespace: "arr"
+      # Template for adding new apps
+      # new-app:
+      #   enabled: "{{ deploy_new_app }}"
+      #   chart_name: "new-app"
+      #   version: "{{ new_app_version | default('1.0.0') }}"
+      #   repo: "https://repo.example.com/"
+      #   namespace: "new-app"
+
+    # Filter for enabled apps only
+    enabled_apps: "{{ app_definitions | dict2items |
+                    selectattr('value.enabled', 'boolean') |
+                    list }}"
+
+    # Generate base directories
+    base_directories:
+      - argocd-apps
+
+    # Generate app directories dynamically
+    app_directories: "{{ enabled_apps | map(attribute='key') |
+                        map('regex_replace', '^(.*)$', 'apps/\\1') | list }}"
+
+    # Combined directory list
+    directories: "{{ base_directories + app_directories }}"
+
+  block:
+    - name: Display enabled apps for deployment
+      ansible.builtin.debug:
+        msg: "Deploying the following apps: {{ enabled_apps | map(attribute='key') | join(', ') }}"
+
+    - name: Create temporary directory for Git operations
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -gitops
+      register: git_temp_dir
+
+    - name: Clone GitLab repository
+      ansible.builtin.git:
+        repo: "https://admin:{{ gitea_api_token | urlencode }}@git.{{ domain }}/{{ git_organization_name }}/{{ git_repo_name }}.git"
+        dest: "{{ git_temp_dir.path }}"
+        force: true
+      environment:
+        GIT_SSL_NO_VERIFY: "true"
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Create directory structure
+      ansible.builtin.file:
+        path: "{{ git_temp_dir.path }}/{{ item }}"
+        state: directory
+      loop: "{{ directories }}"
+
+    - name: Create Chart.yaml files
+      ansible.builtin.copy:
+        dest: "{{ git_temp_dir.path }}/apps/{{ item.key }}/Chart.yaml"
+        content: |
+          apiVersion: v2
+          name: {{ item.key }}
+          description: Helm chart for {{ item.key }}
+          type: application
+          version: 0.0.0
+          dependencies:
+            - name: {{ item.value.chart_name }}
+              version: {{ item.value.version }}
+              repository: {{ item.value.repo }}
+      loop: "{{ enabled_apps }}"
+
+    - name: Create values.yaml files
+      ansible.builtin.template:
+        src: "values-{{ item.key }}.yml.j2"
+        dest: "{{ git_temp_dir.path }}/apps/{{ item.key }}/values.yaml"
+      loop: "{{ enabled_apps }}"
+
+    - name: Create ArgoCD applications
+      ansible.builtin.copy:
+        dest: "{{ git_temp_dir.path }}/argocd-apps/{{ item.key }}.yaml"
+        content: |
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: {{ item.key }}
+            namespace: argocd
+          spec:
+            project: default
+            source:
+              repoURL: https://git.{{ domain }}/{{ git_organization_name }}/{{ git_repo_name }}.git
+              targetRevision: HEAD
+              path: apps/{{ item.key }}
+              helm:
+                valueFiles:
+                  - values.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: {{ item.value.namespace }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+      loop: "{{ enabled_apps }}"
+
+    - name: Push to Git repo
+      ansible.builtin.shell: |
+        cd {{ git_temp_dir.path }}
+        git config user.email "ansible@{{ domain }}"
+        git config user.name "Ansible Automation"
+        git add .
+        git diff --cached --quiet || git commit -m "Deploy enabled apps: {{ enabled_apps | map(attribute='key') | join(', ') }}"
+        git push
+      environment:
+        GIT_TERMINAL_PROMPT: 0
+        GIT_USERNAME: "admin"
+        GIT_PASSWORD: "{{ gitea_api_token }}"
+      register: git_push
+      failed_when: git_push.rc != 0 and "No changes to commit" not in git_push.stdout
+
+    - name: Apply ArgoCD applications
+      kubernetes.core.k8s:
+        state: present
+        namespace: argocd
+        src: "{{ git_temp_dir.path }}/argocd-apps/{{ item.key }}.yaml"
+      loop: "{{ enabled_apps }}"
+  always:
+    - name: Remove temporary directory
+      ansible.builtin.file:
+        path: "{{ git_temp_dir.path }}"
+        state: absent
+      when: git_temp_dir.path is defined

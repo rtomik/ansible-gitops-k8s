@@ -1,0 +1,44 @@
+# longhorn-values.yaml
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: "{{ [groups['master'] | length, 3] | min }}"
+
+csi:
+  # Critical setting for RKE2
+  kubeletRootDir: /var/lib/rancher/rke2/agent/kubelet
+  
+defaultSettings:
+  defaultDataPath: "/var/lib/longhorn"
+  # Reduced CPU guarantees for homelab setup
+  guaranteedEngineManagerCPU: 0
+  guaranteedReplicaManagerCPU: 0
+  guaranteedInstanceManagerCPU: 0
+  # RKE2-specific settings
+  taintToleration: "node.kubernetes.io/unreachable:NoExecute,CriticalAddonsOnly=true:NoSchedule"
+  systemManagedComponentsNodeSelector: "node-role.kubernetes.io/master: true"
+  backupstorePollInterval: 300
+  # Optimize for smaller cluster
+  concurrentReplicaRebuildPerNodeLimit: 2
+  concurrentVolumeBackupRestorePerNodeLimit: 2
+
+instanceManager:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+longhornManager:
+  priorityClass: system-cluster-critical
+  
+longhornDriver:
+  priorityClass: system-cluster-critical
+
+longhornUI:
+  replicas: "{{ [groups['master'] | length, 2] | min }}"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi

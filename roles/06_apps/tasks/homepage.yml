@@ -1,0 +1,50 @@
+---
+- name: Wait for Homepage pod to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: homepage
+    label_selectors:
+      - app.kubernetes.io/name=homepage
+  register: homepage_pod
+  until:
+    - homepage_pod.resources is defined
+    - homepage_pod.resources | length > 0
+    - homepage_pod.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 10
+  when: deploy_homepage | bool
+
+- name: Install python3 kubernetes on localhost
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  delegate_to: localhost
+  when: deploy_homepage | bool
+
+- name: Copy icons to pod
+  kubernetes.core.k8s_cp:
+    namespace: homepage
+    pod: "{{ homepage_pod.resources[0].metadata.name }}"
+    local_path: "{{ role_path }}/homepage/icons"
+    remote_path: "/app/public/"
+    state: to_pod
+  delegate_to: localhost
+  when:
+    - deploy_homepage | bool
+    - homepage_pod.resources is defined
+    - homepage_pod.resources | length > 0
+  register: icons_copy_result
+
+- name: Restart Homepage deployment if new icons or backgrounds are added
+  kubernetes.core.k8s:
+    state: patched
+    kind: Deployment
+    name: homepage
+    namespace: homepage
+    definition:
+      spec:
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/restartedAt: "{{ now(fmt='%Y-%m-%dT%H:%M:%SZ') }}"

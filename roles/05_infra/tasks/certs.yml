@@ -1,0 +1,192 @@
+---
+- name: Check if cert-manager is already installed
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: cert-manager
+    namespace: cert-manager
+  register: cert_manager_check
+  ignore_errors: true
+
+- name: Deploy cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    chart_version: "{{ certmanager_version }}"
+    release_namespace: cert-manager
+    create_namespace: true
+    values:
+      installCRDs: true
+      replicaCount: 1
+      extraArgs:
+        - --dns01-recursive-nameservers=1.1.1.1:53,9.9.9.9:53
+        - --dns01-recursive-nameservers-only
+      podDnsPolicy: None
+      podDnsConfig:
+        nameservers:
+          - 1.1.1.1
+          - 9.9.9.9
+    wait: true
+    wait_timeout: 5m
+  when: cert_manager_check.resources | length == 0
+
+- name: Wait for cert-manager webhook to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: cert-manager-webhook
+    namespace: cert-manager
+  register: webhook_deployment
+  until:
+    - webhook_deployment.resources | length > 0
+    - webhook_deployment.resources[0].status.availableReplicas is defined
+    - webhook_deployment.resources[0].status.availableReplicas > 0
+  retries: 12
+  delay: 30
+
+- name: Deploy reflector
+  kubernetes.core.helm:
+    name: reflector
+    chart_ref: emberstack/reflector
+    chart_version: "{{ reflector_version }}"
+    release_namespace: cert-manager
+    wait: true
+    wait_timeout: 3m
+  when: enable_cloudflare | bool
+
+- name: Add cloudflare api token to secret
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudflare-api-token
+        namespace: cert-manager
+      type: Opaque
+      data:
+        api-token: "{{ cloudflare_api_token | b64encode }}"
+  when: enable_cloudflare | bool
+
+- name: Check if ClusterIssuer exists
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: cloudflare-issuer
+  register: issuer_check
+  ignore_errors: true
+  when: enable_cloudflare | bool
+
+- name: Create issuer
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: cloudflare-issuer
+      spec:
+        acme:
+          server: https://acme-v02.api.letsencrypt.org/directory
+          email: "{{ email }}"
+          privateKeySecretRef:
+            name: cloudflare-key
+          solvers:
+            - dns01:
+                cloudflare:
+                  apiTokenSecretRef:
+                    name: cloudflare-api-token
+                    key: api-token
+              selector:
+                dnsZones:
+                  - "{{ domain }}"
+  when:
+    - enable_cloudflare | bool
+    - issuer_check.resources | length == 0
+
+- name: Wait for ClusterIssuer to be ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: cloudflare-issuer
+  register: issuer_status
+  until:
+    - issuer_status.resources | length > 0
+    - issuer_status.resources[0].status is defined
+    - issuer_status.resources[0].status.conditions is defined
+    - issuer_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+  retries: 5
+  delay: 30
+  when: enable_cloudflare | bool
+
+- name: Check if Certificate exists
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: wildcard-{{ domain }}
+    namespace: cert-manager
+  register: certificate_check
+  ignore_errors: true
+  when: enable_cloudflare | bool
+
+- name: Create certificate
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: wildcard-{{ domain }}
+        namespace: cert-manager
+      spec:
+        secretName: "{{ tls_secret_name }}"
+        issuerRef:
+          name: cloudflare-issuer
+          kind: ClusterIssuer
+        commonName: "*.{{ domain }}"
+        dnsNames:
+          - "{{ domain }}"
+          - "*.{{ domain }}"
+        secretTemplate:
+          annotations:
+            reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+            reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "traefik,gitlab"
+            reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+            reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "traefik,gitlab"
+  when:
+    - enable_cloudflare | bool
+    - certificate_check.resources | length == 0
+
+- name: Wait for certificate to be ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: wildcard-{{ domain }}
+    namespace: cert-manager
+  register: cert_status
+  until:
+    - cert_status.resources | length > 0
+    - cert_status.resources[0].status is defined
+    - cert_status.resources[0].status.conditions is defined
+    - cert_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+  retries: 15
+  delay: 30
+  when: enable_cloudflare | bool
+
+- name: Verify TLS secret exists and is populated
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ tls_secret_name }}"
+    namespace: cert-manager
+  register: tls_secret
+  until:
+    - tls_secret.resources | length > 0
+    - tls_secret.resources[0].data is defined
+    - tls_secret.resources[0].data['tls.crt'] is defined
+    - tls_secret.resources[0].data['tls.key'] is defined
+  retries: 5
+  delay: 10
+  when: enable_cloudflare | bool
+
+- name: Log certificate deployment success
+  ansible.builtin.debug:
+    msg: "Certificate successfully deployed and ready for use. TLS secret: {{ tls_secret_name }}"
+  when: enable_cloudflare | bool

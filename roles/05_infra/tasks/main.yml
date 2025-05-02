@@ -1,0 +1,90 @@
+- name: Install Helm
+  shell: |
+    curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+  tags:
+    - infra
+    - infra:helm
+    - infra:traefik
+    - infra:init
+
+- name: Add Helm repositories
+  kubernetes.core.helm_repository:
+    name: "{{ item.name }}"
+    repo_url: "{{ item.url }}"
+  loop:
+    - { name: traefik, url: "https://traefik.github.io/charts" }
+    - { name: argo, url: "https://argoproj.github.io/argo-helm" }
+    - { name: longhorn, url: "https://charts.longhorn.io" }
+    - { name: rancher-stable, url: "https://releases.rancher.com/server-charts/stable" }
+    - { name: jetstack, url: "https://charts.jetstack.io" }
+    - { name: gitlab, url: "https://charts.gitlab.io/" }
+    - { name: emberstack, url: "https://emberstack.github.io/helm-charts"}
+    - { name: gitea, url: "https://dl.gitea.io/charts"}
+    - { name: authentik, url: "https://charts.goauthentik.io/"}
+  tags:
+    - infra
+    - infra:repos
+    - infra:monitoring
+    - infra:longhorn
+    - infra:traefik
+    - infra:init
+
+- name: Update Helm repositories
+  ansible.builtin.shell: helm repo update
+  changed_when: false
+  tags:
+    - infra
+    - infra:repos
+    - infra:longhorn
+    - infra:init
+
+- import_tasks: certs.yml
+  tags:
+    - infra
+    - infra:certs
+    - infra:init
+
+- import_tasks: traefik.yml
+  tags:
+    - infra
+    - infra:traefik
+    - infra:init
+
+- import_tasks: longhorn.yml
+  tags:
+    - infra
+    - infra:longhorn
+
+- import_tasks: authentik.yml
+  tags:
+    - infra
+    - infra:authentik
+
+- import_tasks: gitea.yml
+  tags:
+    - infra
+    - infra:git
+    - infra:gitea
+
+- import_tasks: gitlab.yml
+  tags:
+    - infra
+    - infra:git
+    - infra:gitlab
+
+- import_tasks: argocd.yml
+  tags:
+    - infra
+    - infra:argocd
+
+- import_tasks: rancher.yml
+  tags:
+    - infra
+    - infra:rancher
+
+- import_tasks: grafana.yml
+  tags:
+    - infra
+    - infra:grafana

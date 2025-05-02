@@ -1,0 +1,104 @@
+---
+grafana:
+  replicas: 1
+  ingress:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      kubernetes.io/ingress.class: traefik
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts: 
+      - grafana.{{ domain }}
+    path: /
+    pathType: Prefix
+    tls:
+      - hosts:
+          - grafana.{{ domain }}
+
+  grafana.ini:
+    security:
+      csrf_trusted_origins: grafana.{{ domain }}
+{% if deploy_authentik %}
+    auth:
+      signout_redirect_url: "https://authentik.{{ domain }}/application/o/grafana/end-session/"
+      oauth_auto_login: true
+    auth.generic_oauth:
+      name: authentik
+      enabled: true
+      client_id: ${authentik_client_id} 
+      client_secret: ${authentik_client_secret}
+      scopes: "openid profile email"
+      auth_url: "https://authentik.{{ domain }}/application/o/authorize/"
+      token_url: "https://authentik.{{ domain }}/application/o/token/"
+      api_url: "https://authentik.{{ domain }}/application/o/userinfo/"
+      role_attribute_path: contains(groups, 'authentik Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+{% endif %}
+  env:
+    GF_SERVER_ROOT_URL: "https://grafana.{{ domain }}"
+    GF_SECURITY_ADMIN_USER: admin
+    GF_SECURITY_ADMIN_PASSWORD:
+      valueFrom:
+        secretKeyRef:
+          name: grafana-admin-secret
+          key: admin-password
+    
+  envFromSecret: "grafana-authentik-credentials"
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+  persistence:
+    enabled: true
+    type: pvc
+    size: 10Gi
+    storageClassName: longhorn
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: monitoring
+      folderAnnotation: grafana_folder
+      provider:
+        allowUiUpdates: true
+        foldersFromFilesStructure: true
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://kube-prometheus-stack-prometheus:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: 30s
+          queryTimeout: 30s
+      - name: Loki
+        access: proxy
+        isDefault: false
+        jsonData:
+          httpHeaderName1: X-Scope-OrgID
+        secureJsonData:
+          httpHeaderValue1: 1
+        orgId: 1
+        type: loki
+        url: http://loki-gateway.monitoring.svc.cluster.local
+
+  extraVolumeMounts:
+    - name: dashboards
+      mountPath: /var/lib/grafana/dashboards
+  extraVolumes:
+    - name: dashboards
+      emptyDir: {}
