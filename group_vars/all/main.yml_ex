@@ -22,7 +22,6 @@ cloudflare_api_token: "<cloudflare api>"
 tls_secret_name: "wildcard-{{ domain }}-tls"
 
 # Git
-# Choose your git repo for argocd
 deploy_gitea: true
 git_organization_name: "homelab"
 git_repo_name: "argocd"
@@ -67,7 +66,7 @@ certmanager_version: 1.16.3
 argocd_version: 7.8.15
 longhorn_version: 1.8.1
 authentik_version: 2024.12.2
-rancher_version: 2.10.1
+rancher_version: 2.11.1
 metallb_version: 0.14.9
 gitlab_version: 8.8.0
 gitea_version: 11.0.1

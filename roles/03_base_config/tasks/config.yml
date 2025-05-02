@@ -20,8 +20,6 @@
           - apt-transport-https
           - ca-certificates
           - software-properties-common
-          - fail2ban
-          - ufw
           - python3-kubernetes
           - python3-yaml
           - python3-venv

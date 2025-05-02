@@ -3,9 +3,3 @@
   ansible.builtin.import_tasks: config.yml
   tags:
     - config
-
-- name: Import firewall tasks
-  ansible.builtin.import_tasks: firewall.yml
-  tags:
-    - config
-    - config:firewall
