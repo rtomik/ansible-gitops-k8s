@@ -1,0 +1,46 @@
+- name: Deploy ArgoCD
+  block:
+    - name: Check if ArgoCD is already installed
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: argocd-server
+        namespace: argocd
+      register: argocd_check
+      ignore_errors: true
+
+    - name: Fetch ArgoCD Helm chart information
+      kubernetes.core.helm_info:
+        name: argocd
+        release_namespace: argocd
+      register: argocd_helm_info
+      ignore_errors: true
+
+    - name: Deploy or upgrade ArgoCD
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        chart_version: "{{ argocd_version }}"
+        release_namespace: argocd
+        create_namespace: true
+        values: "{{ lookup('template', 'values-argocd.yml.j2') | from_yaml }}"
+        wait: true
+        wait_timeout: 10m
+      register: argocd_deploy
+      until: argocd_deploy is succeeded
+      retries: 3
+      delay: 10
+
+    - name: Wait for ArgoCD to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: argocd
+        label_selectors:
+          - app.kubernetes.io/name=argocd-server
+      register: argocd_pods
+      until: >
+        argocd_pods.resources | length > 0 and
+        (argocd_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+      retries: 20
+      delay: 30
+      when: argocd_deploy is changed

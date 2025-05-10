@@ -1,0 +1,55 @@
+lubelogger:
+  image:
+    repository: ghcr.io/hargata/lubelogger
+    tag: "v1.4.7"
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: lubelog.{{ domain }}
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls:
+      - hosts:
+          - sonarr.{{ domain }}
+
+  persistence:
+    data:
+      enabled: true
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    documents:
+      enabled: true
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 2Gi
+    images:
+      enabled: true
+      storageClass: "longhorn"
+      accessMode: ReadWriteOnce
+      size: 5Gi
+
+  secret:
+    # -- Specifies whether a secret should be created.
+    create: true
+    # -- Email server for the secret.
+    emailServer: "a"
+    # -- Email from address for the secret.
+    emailFrom: "lubelogger@{{ domain }}"
+    # -- Port for the email server.
+    port: 587
+    # -- Username for the email server.
+    username: "test" 
+    # -- Password for the email server.
+    password: "test"
+  config:
+    userConfig:
+      UseDarkMode: true
+      EnableAuth: false
+      UseMPG: false

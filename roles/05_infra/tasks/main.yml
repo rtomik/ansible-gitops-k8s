@@ -74,17 +74,7 @@
     - infra:git
     - infra:gitlab
 
-- import_tasks: argocd.yml
-  tags:
-    - infra
-    - infra:argocd
-
-- import_tasks: rancher.yml
-  tags:
-    - infra
-    - infra:rancher
-
-- import_tasks: grafana.yml
-  tags:
-    - infra
-    - infra:grafana
+# - import_tasks: rancher.yml
+#   tags:
+#     - infra
+#     - infra:rancher

@@ -1,0 +1,42 @@
+wg-easy:
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: wgeasy.{{ domain }}
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls:
+      - hosts:
+          - wgeasy.{{ domain }}
+
+  command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Enabling IP forwarding"
+      sysctl -w net.ipv4.ip_forward=1
+      iptables -t nat -F POSTROUTING
+      # Masquerade traffic going to Kubernetes CIDR ranges and LoadBalancer IP
+      iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -d 10.42.0.0/16 -o eth0 -j MASQUERADE
+      iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -d 10.43.0.0/16 -o eth0 -j MASQUERADE
+      iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -d 192.168.1.200/32 -o eth0 -j MASQUERADE
+      exec node server.js
+
+  environmentVariables:
+    LANG: en  
+    WG_HOST: wgeasy.{{ domain }}
+    # Set to allow access to Kubernetes subnets and LoadBalancer IP
+    WG_ALLOWED_IPS: "10.42.0.0/16,10.43.0.0/16,192.168.1.200/32"
+    # Set default DNS to the cluster's DNS service
+    WG_DEFAULT_DNS: "8.8.8.8"
+    PASSWORD: password
+
+  volume:
+    enabled: true
+    className: longhorn
+    size: 100m

@@ -185,6 +185,12 @@
         state: started
         daemon_reload: true
 
+    - name: Ensure kubeconfig directory exists
+      ansible.builtin.file:
+        path: "/root/.kube"
+        state: directory
+        mode: '0700'
+
     - name: Update kubeconfig on all master nodes
       ansible.builtin.copy:
         content: "{{ hostvars[groups['master'][0]]['rke2_kubeconfig']['content'] | b64decode | replace('https://127.0.0.1:6443', 'https://' + kube_vip_address + ':6443') }}"

@@ -1,0 +1,35 @@
+---
+# default values
+# https://artifacthub.io/packages/helm/goauthentik/authentik
+
+authentik:
+  secret_key: "{{ vault_authentik_secret_key }}"
+  error_reporting:
+      enabled: false
+  postgresql:
+      password: "{{ vault_authentik_postgresql_password }}"
+  bootstrap_token: "{{ vault_authentik_api_token }}"
+  bootstrap_email: "{{ email }}"
+  bootstrap_password: "{{ vault_authentik_user_password }}"
+
+server:
+  ingress:
+    enabled: true
+    hosts:
+      - authentik.{{ domain }}
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      kubernetes.io/ingress.class: traefik
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    tls:
+      - hosts:
+        - authentik.{{ domain }}
+
+postgresql:
+  enabled: true
+  auth:
+      password: "{{ vault_authentik_postgresql_password }}"
+
+redis:
+    enabled: true

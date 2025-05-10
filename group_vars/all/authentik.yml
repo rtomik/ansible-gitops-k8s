@@ -1,0 +1,122 @@
+authentik_apps:
+  - name: ArgoCD
+    slug: argocd
+    namespace: argocd
+    deploy_condition: deploy_argocd | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://argocd.{{ domain }}/api/dex/callback"
+      - matching_mode: strict
+        url: "http://localhost:8085/auth/callback"
+    meta_launch_url: "https://argocd.{{ domain }}/auth/login"
+    open_in_new_tab: true
+    secret_name: argocd-authentik-credentials
+    sub_mode: null
+    signing_key: true
+    authentication_flow: "{{ flow_ids['default-authentication-flow'] }}"
+    additional_config: []
+  - name: Grafana
+    slug: grafana
+    namespace: monitoring
+    deploy_condition: deploy_grafana | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: regex
+        url: "https://grafana.{{ domain }}/login/generic_oauth"
+    meta_launch_url: "https://grafana.{{ domain }}/"
+    open_in_new_tab: true
+    secret_name: grafana-authentik-credentials
+    sub_mode: null
+    signing_key: false
+    additional_config: []
+  - name: Gitea
+    slug: gitea
+    namespace: gitea
+    deploy_condition: deploy_gitea | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://git.{{ domain }}/user/oauth2/authentik/callback"
+    meta_launch_url: "https://git.{{ domain }}/"
+    open_in_new_tab: true
+    secret_name: gitea-authentik-secret
+    sub_mode: user_email
+    signing_key: false
+    additional_config:
+      - name: gitea-authentik-secret
+        type: Opaque
+        format: stringData
+        template_type: gitea
+  - name: Donetick
+    slug: donetick
+    namespace: donetick
+    deploy_condition: deploy_donetick | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://donetick.{{ domain }}/auth/oauth2"
+    meta_launch_url: "https://donetick.{{ domain }}/"
+    open_in_new_tab: true
+    secret_name: donetick-authentik-credentials
+    sub_mode: user_email
+    signing_key: false
+    additional_config: []
+  - name: Jellyfin
+    slug: jellyfin
+    namespace: jellyfin
+    deploy_condition: deploy_jellyfin | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://jellyfin.{{ domain }}/sso/OID/redirect/authentik"
+    meta_launch_url: "https://jellyfin.{{ domain }}/sso/OID/start/authentik"
+    open_in_new_tab: true
+    secret_name: jellyfin-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
+  - name: OpenWebui
+    slug: openwebui
+    namespace: open-webui
+    deploy_condition: deploy_open_webui | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://openwebui.{{ domain }}/oauth/oidc/callback"
+    meta_launch_url: "https://openwebui.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: openwebui-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
+  - name: Paperless-ngx
+    slug: paperless-ngx
+    namespace: paperless-ngx
+    deploy_condition: deploy_paperless_ngx | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://paperless.{{ domain }}/accounts/oidc/authentik/login/callback/"
+    meta_launch_url: "https://paperless.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: paperless-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
+  - name: Audiobookshelf
+    slug: audiobookshelf
+    namespace: audiobookshelf
+    deploy_condition: deploy_audiobookshelf | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://audiobookshelf.{{ domain }}/auth/openid/callback"
+      - matching_mode: strict
+        url: "https://audiobookshelf.{{ domain }}/auth/openid/mobile-redirect"
+    meta_launch_url: "https://audiobookshelf.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: audiobookshelf-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []

@@ -83,6 +83,8 @@
 - name: 05 Deploy infrastructure applications
   hosts: rke2_cluster[0]
   become: true
+  vars_files:
+    - "../group_vars/all/authentik.yml"  
   vars:
     ansible_user: "ansible"
   roles:
@@ -90,7 +92,19 @@
       tags:
         - infra
 
-- name: 06 Deploy applications
+- name: 06 Argocd
+  hosts: rke2_cluster[0]
+  become: true
+  vars_files:
+    - "../group_vars/all/argocd.yml"
+  vars:
+    ansible_user: "ansible"
+  roles:
+    - role: 06_argocd
+      tags:
+        - argocd        
+
+- name: 07 Confire apps
   hosts: rke2_cluster[0]
   become: true
   vars:

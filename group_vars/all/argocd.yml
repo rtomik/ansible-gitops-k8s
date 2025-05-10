@@ -1,0 +1,139 @@
+app_definitions:
+  prometheus-operator-crds:
+    enabled: "{{ deploy_prometheus }}"
+    chart_name: "prometheus-operator-crds"
+    version: "{{ prometheus_crds_version }}"
+    repo: "https://prometheus-community.github.io/helm-charts"
+    namespace: "monitoring"
+    server_side: "true"
+  kube-prometheus-stack:
+    enabled: "{{ deploy_prometheus }}"
+    chart_name: "kube-prometheus-stack"
+    version: "{{ prometheus_stack_version }}"
+    repo: "https://prometheus-community.github.io/helm-charts"
+    namespace: "monitoring"
+    skip_crds: "true"
+  grafana:
+    enabled: "{{ deploy_grafana }}"
+    chart_name: "grafana"
+    version: "{{ grafana_version }}"
+    repo: "https://grafana.github.io/helm-charts"
+    namespace: "monitoring"
+  loki:
+    enabled: "{{ deploy_loki }}"
+    chart_name: "loki"
+    version: "{{ loki_version }}"
+    repo: "https://grafana.github.io/helm-charts"
+    namespace: "monitoring"
+  promtail:
+    enabled: "{{ deploy_loki }}"
+    chart_name: "promtail"
+    version: "{{ promtail_version }}"
+    repo: "https://grafana.github.io/helm-charts"
+    namespace: "monitoring"
+  renovate:
+    enabled: "{{ deploy_renovate }}"
+    chart_name: "renovate"
+    version: "{{ renovate_version }}"
+    repo: "https://docs.renovatebot.com/helm-charts"
+    namespace: "renovate"
+  wg-easy:
+    enabled: "{{ deploy_wg_easy }}"
+    chart_name: "wg-easy"
+    version: "{{ wg_easy_version }}"
+    repo: "https://raw.githubusercontent.com/hansehe/wg-easy-helm/master/helm/charts"
+    namespace: "wg-easy"
+  audiobookshelf:
+    enabled: "{{ deploy_audiobookshelf }}"
+    chart_name: "audiobookshelf"
+    version: "{{ audiobookshelf_version }}"
+    repo: "https://gitlab.com/api/v4/projects/57546317/packages/helm/release"
+    namespace: "audiobookshelf"
+  open-webui:
+    enabled: "{{ deploy_open_webui }}"
+    chart_name: "open-webui"
+    version: "{{ openwebui_version }}"
+    repo: "https://helm.openwebui.com/"
+    namespace: "open-webui"
+  homepage:
+    enabled: "{{ deploy_homepage }}"
+    chart_name: "homepage"
+    version: "{{ homepage_version }}"
+    repo: "https://jameswynn.github.io/helm-charts"
+    namespace: "homepage"
+  donetick:
+    enabled: "{{ deploy_donetick }}"
+    chart_name: "donetick"
+    version: "{{ donetick_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "donetick"
+  jellyfin:
+    enabled: "{{ deploy_jellyfin }}"
+    chart_name: "jellyfin"
+    version: "{{ jellyfin_version }}"
+    repo: "https://jellyfin.github.io/jellyfin-helm"
+    namespace: "jellyfin"
+  paperless-ngx:
+    enabled: "{{ deploy_paperless_ngx }}"
+    chart_name: "paperless-ngx"
+    version: "{{ paperless_ngx_version }}"
+    repo: "https://charts.gabe565.com"
+    namespace: "paperless-ngx"
+  recipya:
+    enabled: "{{ deploy_recipya }}"
+    chart_name: "recipya"
+    version: "{{ recipya_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "recipya"
+  radarr:
+    enabled: "{{ deploy_arr }}"
+    chart_name: "radarr"
+    version: "{{ radarr_version }}"
+    repo: "https://charts.pree.dev"
+    namespace: "arr"
+  sonarr:
+    enabled: "{{ deploy_arr }}"
+    chart_name: "sonarr"
+    version: "{{ sonarr_version }}"
+    repo: "https://charts.pree.dev"
+    namespace: "arr"
+  prowlarr:
+    enabled: "{{ deploy_arr }}"
+    chart_name: "prowlarr"
+    version: "{{ prowlarr_version }}"
+    repo: "https://charts.pree.dev"
+    namespace: "arr"
+  qbittorrent:
+    enabled: "{{ deploy_arr }}"
+    chart_name: "qbittorrent"
+    version: "{{ qbittorrent_version }}"
+    repo: "https://charts.gabe565.com"
+    namespace: "arr"
+  jellyseerr:
+    enabled: "{{ deploy_arr }}"
+    chart_name: "jellyseerr"
+    version: "{{ jellyseerr_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "arr"
+  lubelogger:
+    enabled: "{{ deploy_lubelogger }}"
+    chart_name: "lubelogger"
+    version: "{{ lubelogger_version }}"
+    repo: "https://anza-labs.github.io/charts"
+    namespace: "lubelogger"
+
+# Filter for enabled apps only
+enabled_apps: "{{ app_definitions | dict2items |
+                selectattr('value.enabled', 'boolean') |
+                list }}"
+
+# Generate base directories
+base_directories:
+  - argocd-apps
+
+# Generate app directories dynamically
+app_directories: "{{ enabled_apps | map(attribute='key') |
+                    map('regex_replace', '^(.*)$', 'apps/\\1') | list }}"
+
+# Combined directory list
+directories: "{{ base_directories + app_directories }}"

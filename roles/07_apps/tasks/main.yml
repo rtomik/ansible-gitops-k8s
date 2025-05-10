@@ -1,0 +1,18 @@
+---
+
+- import_tasks: homepage.yml
+  tags:
+    - apps
+    - apps:homepage
+
+- import_tasks: grafana.yml
+  tags:
+    - infra
+    - infra:grafana
+
+# - import_tasks: homeassistant.yml
+#   tags:
+#     - apps
+#     - apps:homeassistant
+#     - apps:smarthome
+

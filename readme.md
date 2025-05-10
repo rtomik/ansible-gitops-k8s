@@ -63,7 +63,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 ### Network Requirements
 - SSH access to all nodes (root SSH keys)
-- Doall name (Recommended: [Porkbun](https://porkbun.com/) or [DuckDNS](https://www.duckdns.org/))
+- DOMAIN name (Recommended: [Porkbun](https://porkbun.com/) or [DuckDNS](https://www.duckdns.org/))
 - [Tailscale account](https://login.tailscale.com/admin/settings/keys)
 
 ### Optional
@@ -74,24 +74,22 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 1. **Clone and prepare configuration**
    ```bash
-   git clone https://github.com/rtomik/k3s_ansible.git && cd k3s_ansible\
+   git clone https://github.com/rtomik/rke2-ha-cluster.git && cd rke2-ha-cluster\
    mv inventory.yml_ex inventory.yml && \
-   mv group_vars/all.yml_ex group_vars/all.yml
+   mv group_vars/all/main.yml_ex group_vars/all/main.yml
    ```
 
 2. **Configure nodes**
    - Update `inventory.yml` with node IPs
-   - Modify `group_vars/all.yml` with your configurations
+   - Modify `group_vars/all/main.yml` with your configurations
    - Set required variables in `Required variables` section
 
 3. **Initial Deployment**
    NOTE: If you enabled cloudflare it can take some time to propagate new TLS certificate
-   First deploy k3s and cert-manager, 
    ```
-   ansible-playbook playbooks/all.yml --tags local,config,k3s,infra:init
+   ansible-playbook playbooks/all.yml
    ```
    Kubeconfig will be stored in playbook dir
-   Verify certificate (wait 5-10 minutes):
    ```
    k get certificate -A
    ```
@@ -105,21 +103,14 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
    Error cleaning up challenge: while querying the Cloudflare API for DELETE
    ```
    Delete TXT _acme-challenge records in cloudflare
-   Delete certificate from kubernetes and retry
+   Delete certificate from kubernetes and retry then ansible playbook
 
-   After the certificate is created rerun the all playbook.
-
-4. **Complete Deployment**
-   ```bash
-   ansible-playbook playbooks/all.yml
-   ```
-
-5. **To deploy specific components, use tags**
+4. **To deploy specific components, use tags**
    ```
    ansible-playbook playbooks/all.yml --tags "k3s"
    ```
 
-6. **To destroy the cluster and remove everything**
+5. **To destroy the cluster and remove everything**
    ```
    ansible-playbook playbooks/destroy.yml
    ```
@@ -130,14 +121,14 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| Rancher | `https://rancher.<doall>` | Kubernetes Management UI |
-| ArgoCD | `https://argocd.<doall>` | GitOps Control Panel |
-| Grafana | `https://grafana.<doall>` | Metrics & Logs Visualization |
-| Authentik | `https://authentik.<doall>` | SSO/IAM Portal |
-| Prometheus | `https://prometheus.<doall>` | Metrics Storage |
-| Gittea | `https://git.<doall>` | Source Control |
-| Homepage | `https://home.<doall>` | System Dashboard |
-| Jellyfin | `https://jellyfin.<doall>/web/#/wizardstart.html` | Media |
+| Rancher | `https://rancher.<DOMAIN>` | Kubernetes Management UI |
+| ArgoCD | `https://argocd.<DOMAIN>` | GitOps Control Panel |
+| Grafana | `https://grafana.<DOMAIN>` | Metrics & Logs Visualization |
+| Authentik | `https://authentik.<DOMAIN>` | SSO/IAM Portal |
+| Prometheus | `https://prometheus.<DOMAIN>` | Metrics Storage |
+| Gittea | `https://git.<DOMAIN>` | Source Control |
+| Homepage | `https://home.<DOMAIN>` | System Dashboard |
+| Jellyfin | `https://jellyfin.<DOMAIN>/web/#/wizardstart.html` | Media |
 
 ### Configure Authentik
 
@@ -166,10 +157,10 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 ### Configure Apps
 
 #### Jellyfin
-   - Intial setup https://jellyfin.< Doall >/web/#/wizardstart.html
+   - Intial setup https://jellyfin.< DOMAIN >/web/#/wizardstart.html
 
 #### Radarr, Sonarr add download client
-   - Add Download Client - qBittorrent https://radarr.< Doall >/settings/downloadclients
+   - Add Download Client - qBittorrent https://radarr.< DOMAIN >/settings/downloadclients
    - Host: qbittorrent.arr.svc.cluster.local
    - Port: 8080
    - User: admin
@@ -208,5 +199,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - 🌟 Star this repo if you find it helpful!
-- 🐛 Report issues in the [Issue Tracker](https://github.com/rtomik/k3s_ansible/issues)
+- 🐛 Report issues in the [Issue Tracker](https://github.com/rtomik/rke2-ha-cluster/issues)
 - 📝 Submit improvements via Pull Requests
