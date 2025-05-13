@@ -20,7 +20,7 @@
       when: gitea_api_token is not defined or gitea_api_token | length == 0
 
 # for some reason env from secret didnt worked for renovate helm chart
-- name: Get renovate api key
+- name: Get git renovate api key
   when: deploy_renovate | bool and deploy_gitea | bool
   block:
     - name: Read back the Gitea API token from the k8s Secret

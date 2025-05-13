@@ -1,3 +1,33 @@
 kube-prometheus-stack:
   grafana:
     enabled: false
+
+  prometheus:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd    
+      hosts:
+        - prometheus.{{ domain }}
+      paths:
+        - /
+      tls:
+        - hosts:
+            - prometheus.{{ domain }}          
+
+    prometheusSpec:
+      persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Retain
+        whenScaled: Retain
+
+      retention: 30d
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: longhorn
+            resources:
+              requests:
+                storage: 50Gi
