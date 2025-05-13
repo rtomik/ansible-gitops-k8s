@@ -1,15 +1,17 @@
-# traefik-values.yaml
 deployment:
-  replicas: 3
+  replicas: {{ [groups['master'] | length, 3] | min }}
+
 additionalArguments:
   - "--providers.kubernetesingress.ingressclass=traefik"
   - "--ping"
   - "--metrics.prometheus"
+
 service:
   enabled: true
   type: LoadBalancer
   spec:
     loadBalancerIP: "{{ kube_vip_address }}"
+
 ingressRoute:
   dashboard:
     enabled: true
@@ -20,3 +22,12 @@ tlsStore:
   default:
     defaultCertificate:
       secretName: "{{ tls_secret_name }}"
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+            app.kubernetes.io/instance: traefik
+        topologyKey: kubernetes.io/hostname      

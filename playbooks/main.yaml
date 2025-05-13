@@ -110,6 +110,6 @@
   vars:
     ansible_user: "ansible"
   roles:
-    - role: 06_apps
+    - role: 07_apps
       tags:
         - apps        

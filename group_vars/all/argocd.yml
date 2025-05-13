@@ -1,4 +1,10 @@
 app_definitions:
+  rancher:
+    enabled: "{{ deploy_rancher }}"
+    chart_name: "rancher"
+    version: "{{ rancher_version }}"
+    repo: "https://releases.rancher.com/server-charts/stable"
+    namespace: "cattle-system"
   prometheus-operator-crds:
     enabled: "{{ deploy_prometheus }}"
     chart_name: "prometheus-operator-crds"

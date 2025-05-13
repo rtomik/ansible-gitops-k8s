@@ -122,7 +122,15 @@ postgresql-ha:
   persistence:
     size: 10Gi
     storageClass: longhorn
-
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql-ha
+            topologyKey: kubernetes.io/hostname
 gitea:
   admin:
     existingSecret: gitea-admin-secret

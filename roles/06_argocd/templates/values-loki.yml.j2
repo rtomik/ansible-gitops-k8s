@@ -1,5 +1,9 @@
----
 loki:
+  global:
+    clusterDomain: "cluster.local"
+    dnsService: "rke2-coredns-rke2-coredns"
+    dnsNamespace: "kube-system"
+
   loki:
     auth_enabled: false
     schemaConfig:
@@ -62,11 +66,9 @@ loki:
   singleBinary:
     replicas: 0
 
-  # This exposes the Loki gateway so it can be written to and queried externaly
   gateway:
     service:
       type: LoadBalancer
-
 
   # Enable minio for storage
   minio:

@@ -2,7 +2,13 @@
 persistence:
   defaultClass: true
   defaultClassReplicaCount: "{{ [groups['master'] | length, 3] | min }}" 
-  
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack    
+
 defaultSettings:
   defaultDataPath: "/var/lib/longhorn"
   guaranteedEngineManagerCPU: 0

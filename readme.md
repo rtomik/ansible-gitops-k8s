@@ -132,6 +132,8 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 ### Configure Authentik
 
+Some apps needs to be configured manually
+
 #### Jellyfin
 
    - Follow this guide [Authentik docs](https://docs.goauthentik.io/integrations/services/jellyfin/#oidc-configuration)   
@@ -156,8 +158,14 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 ### Configure Apps
 
+#### Qbittorent
+   - If you enabled qbittorent with VPN check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  
+
 #### Jellyfin
    - Intial setup https://jellyfin.< DOMAIN >/web/#/wizardstart.html
+
+#### Jellyserr
+   - Initial setup https://jellyseerr.< DOMAIN >/setup
 
 #### Radarr, Sonarr add download client
    - Add Download Client - qBittorrent https://radarr.< DOMAIN >/settings/downloadclients

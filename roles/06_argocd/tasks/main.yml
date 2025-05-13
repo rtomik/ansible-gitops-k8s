@@ -1,2 +1,14 @@
 - import_tasks: deploy.yml
+  tags:
+    - argocd
+    - argocd:deploy
+
 - import_tasks: configure.yml
+  tags:
+    - argocd
+    - argocd:configure
+
+- import_tasks: apps.yml
+  tags:
+    - argocd
+    - argocd:apps

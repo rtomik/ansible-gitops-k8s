@@ -17,7 +17,6 @@
     - { name: traefik, url: "https://traefik.github.io/charts" }
     - { name: argo, url: "https://argoproj.github.io/argo-helm" }
     - { name: longhorn, url: "https://charts.longhorn.io" }
-    - { name: rancher-stable, url: "https://releases.rancher.com/server-charts/stable" }
     - { name: jetstack, url: "https://charts.jetstack.io" }
     - { name: gitlab, url: "https://charts.gitlab.io/" }
     - { name: emberstack, url: "https://emberstack.github.io/helm-charts"}

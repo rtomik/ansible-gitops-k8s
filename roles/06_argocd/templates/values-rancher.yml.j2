@@ -1,19 +1,29 @@
 ---
 # default values
 # https://artifacthub.io/packages/helm/rancher-stable/rancher?modal=values
-hostname: rancher.{{ domain }}
+rancher:
+  hostname: rancher.{{ domain }}
 
-replicas: "{{ [groups['k3s_cluster'] | length, 3] | min }}"
+  replicas: {{ [groups['master'] | length, 3] | min }}
+  antiAffinity: required
 
-ingress:
-  enabled: true
-  ingressClassName: traefik
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
-  pathType: ImplementationSpecific
-  path: "/"
-  servicePort: 80
+  # Add this to disable webhooks during installation
+  bootstrapPassword: "admin"  # Set a secure initial password
+  features: ""  # Ensure no extra features are enabled
+  
+  # Temporarily disable webhook during installation
+  webhook:
+    enabled: false
 
-certmanager:
-  install: false
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    pathType: ImplementationSpecific
+    path: "/"
+    servicePort: 80
+
+  certmanager:
+    install: false

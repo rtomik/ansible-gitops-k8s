@@ -1,0 +1,147 @@
+- name: Get git api token
+  block:
+    - name: Get Gitea API token from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: gitea-api-token
+        namespace: argocd
+      register: gitea_token_secret
+
+    - name: Set API token fact
+      ansible.builtin.set_fact:
+        gitea_api_token: "{{ gitea_token_secret.resources[0].data.api_token | b64decode }}"
+      no_log: true
+      when: gitea_token_secret.resources is defined and gitea_token_secret.resources | length > 0
+
+    - name: Verify API token was retrieved
+      ansible.builtin.fail:
+        msg: "Failed to retrieve Gitea API token from Kubernetes secret"
+      when: gitea_api_token is not defined or gitea_api_token | length == 0
+
+# for some reason env from secret didnt worked for renovate helm chart
+- name: Get renovate api key
+  when: deploy_renovate | bool and deploy_gitea | bool
+  block:
+    - name: Read back the Gitea API token from the k8s Secret
+      kubernetes.core.k8s_info:
+        kind: Secret
+        namespace: renovate
+        name: gitea-api-token
+      register: secret_info
+
+    - name: Decode it into a variable and remove trailing newline
+      ansible.builtin.set_fact:
+        renovate_api_token: >-
+          {{ secret_info.resources[0].data.api_token | b64decode | regex_replace('\\n$', '') }}
+
+- name: Deploy infrastructure apps via ArgoCD
+  block:
+    - name: Display enabled apps for deployment
+      ansible.builtin.debug:
+        msg: "Deploying the following apps: {{ enabled_apps | map(attribute='key') | join(', ') }}"
+
+    - name: Create temporary directory for Git operations
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -gitops
+      register: git_temp_dir
+
+    - name: Clone GitLab repository
+      ansible.builtin.git:
+        repo: "https://admin:{{ gitea_api_token | urlencode }}@git.{{ domain }}/{{ git_organization_name }}/{{ git_repo_name }}.git"
+        dest: "{{ git_temp_dir.path }}"
+        force: true
+      environment:
+        GIT_SSL_NO_VERIFY: "true"
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Create directory structure
+      ansible.builtin.file:
+        path: "{{ git_temp_dir.path }}/{{ item }}"
+        state: directory
+      loop: "{{ directories }}"
+
+    - name: Create Chart.yaml files
+      ansible.builtin.copy:
+        dest: "{{ git_temp_dir.path }}/apps/{{ item.key }}/Chart.yaml"
+        content: |
+          apiVersion: v2
+          name: {{ item.key }}
+          description: Helm chart for {{ item.key }}
+          type: application
+          version: 0.0.0
+          dependencies:
+            - name: {{ item.value.chart_name }}
+              version: {{ item.value.version }}
+              repository: {{ item.value.repo }}
+      loop: "{{ enabled_apps }}"
+
+    - name: Create values.yaml files
+      ansible.builtin.template:
+        src: "values-{{ item.key }}.yml.j2"
+        dest: "{{ git_temp_dir.path }}/apps/{{ item.key }}/values.yaml"
+      loop: "{{ enabled_apps }}"
+
+    - name: Create ArgoCD applications
+      ansible.builtin.copy:
+        dest: "{{ git_temp_dir.path }}/argocd-apps/{{ item.key }}.yaml"
+        content: |
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: {{ item.key }}
+            namespace: argocd
+          spec:
+            project: default
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: {{ item.value.namespace }}
+            source:
+              repoURL: https://git.{{ domain }}/{{ git_organization_name }}/{{ git_repo_name }}.git
+              targetRevision: HEAD
+              path: apps/{{ item.key }}
+              helm:
+                valueFiles:
+                  - values.yaml
+          {% if item.value.skip_crds is defined and item.value.skip_crds | bool %}
+                skipCrds: true
+          {% endif %}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+          {% if item.value.server_side is defined and item.value.server_side | bool %}
+                - ServerSideApply=true
+          {% endif %}
+      loop: "{{ enabled_apps }}"
+
+    - name: Push to Git repo
+      ansible.builtin.shell: |
+        cd {{ git_temp_dir.path }}
+        git config user.email "ansible@{{ domain }}"
+        git config user.name "Ansible Automation"
+        git add .
+        git diff --cached --quiet || git commit -m "Deploy enabled apps: {{ enabled_apps | map(attribute='key') | join(', ') }}"
+        git push
+      environment:
+        GIT_TERMINAL_PROMPT: 0
+        GIT_USERNAME: "admin"
+        GIT_PASSWORD: "{{ gitea_api_token }}"
+      register: git_push
+      failed_when: git_push.rc != 0 and "No changes to commit" not in git_push.stdout
+
+    - name: Apply ArgoCD applications
+      kubernetes.core.k8s:
+        state: present
+        namespace: argocd
+        src: "{{ git_temp_dir.path }}/argocd-apps/{{ item.key }}.yaml"
+      loop: "{{ enabled_apps }}"
+  always:
+    - name: Remove temporary directory
+      ansible.builtin.file:
+        path: "{{ git_temp_dir.path }}"
+        state: absent
+      when: git_temp_dir.path is defined

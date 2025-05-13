@@ -48,7 +48,10 @@ lubelogger:
     username: "test" 
     # -- Password for the email server.
     password: "test"
+
   config:
+    LANG: "{{ lang }}"
+    LC_ALL: "{{ lang }}"
     userConfig:
       UseDarkMode: true
       EnableAuth: false
