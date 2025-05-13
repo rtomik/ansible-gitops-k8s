@@ -1,0 +1,100 @@
+qbittorrent-vpn:
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: qbittorrent.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - qbittorrent.{{ domain }}
+
+  qbittorrent:
+    image:
+      repository: linuxserver/qbittorrent
+      tag: 5.1.0
+    env:
+      - name: TZ
+        value: "{{ timezone }}"
+    persistence:
+      config:
+        enabled: true
+        storageClass: "longhorn"
+        accessMode: ReadWriteOnce
+        size: 2Gi
+        mountPath: /config
+      
+      downloads:
+        enabled: true
+        storageClass: "longhorn"
+        accessMode: ReadWriteOnce
+        size: 2Gi
+        mountPath: /downloads  
+        
+  gluetun:
+    enabled: {{ vpn.enabled }}
+    image:
+      repository: qmcgaw/gluetun
+      tag: v3.40.0
+      pullPolicy: IfNotPresent        
+    vpn:
+      # Choose from: nordvpn, protonvpn, expressvpn, surfshark, mullvad, ivpn, private internet access, etc.
+      provider: "{{ vpn.provider }}"
+      
+      # Choose from: openvpn or wireguard
+      type: "{{ vpn.type }}"
+      
+      # Server selection (comma-separated lists)
+      serverCountries: "{{ vpn.server_countries }}"  # e.g., "Netherlands,Germany,Sweden"
+      serverCities: "{{ vpn.server_cities }}"            # e.g., "Amsterdam,Frankfurt" (optional)
+      serverNames: "{{ vpn.server_names }}"             # e.g., "nl1,nl2" (optional)
+      randomize: "{{ vpn.randomize }}"           # Randomize server selection
+      
+      # OpenVPN specific settings (when type is "openvpn")
+      openvpn:
+        # Add any OpenVPN specific settings here, they'll be converted to env vars
+        OPENVPN_PROTOCOL: "udp"
+      
+      # WireGuard specific settings (when type is "wireguard")
+      wireguard:
+        privateKey: "{{ vpn.wireguard.private_key }}"  # Will be stored in Secret if provided
+        privateKeyExistingSecret: "{{ vpn.wireguard.private_key_existing_secret }}"
+        privateKeyExistingSecretKey: "{{ vpn.wireguard.private_key_existing_secret_key }}"
+        addresses: "{{ vpn.wireguard.addresses}}"   # e.g., "10.64.222.21/32"
+        endpointIP: "{{ vpn.wireguard.endpoint_ip }}"  # Optional: specify endpoint IP
+        endpointPort: "{{ vpn.wireguard.endpoint_port }}"  # Optional: specify endpoint port
+        publicKey: "{{ vpn.wireguard.public_key }}"   # Optional: server public key
+    
+    # VPN credentials (choose one method)
+    credentials:
+      create: {{ vpn.credentials.create }} # set to false if using existing secret
+      # For OpenVPN (normal credentials)
+      username: "{{ vpn.credentials.username }}"
+      password: "{{ vpn.credentials.password }}"
+      # For WireGuard, the privateKey is specified in vpn.wireguard.privateKey
+      
+      # Alternatively, reference an existing secret
+      existingSecret: "{{ vpn.credentials.existingSecret }}"
+      usernameKey: "{{ vpn.credentials.usernameKey }}"
+      passwordKey: "{{ vpn.credentials.passwordKey }}"
+    
+    # General Gluetun settings as environment variables
+    settings:
+      FIREWALL: "on"
+      FIREWALL_OUTBOUND_SUBNETS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      DNS_ADDRESS: "1.1.1.1"
+      HEALTH_SERVER_PORT: "8000"
+      
+      # Important: Add these settings to make networking work correctly with ingress
+      SERVER_ALLOWLIST: "qbittorrent:8080"  # Allow accessing qBittorrent container
+      FIREWALL_INPUT_PORTS: "8080"          # Allow ingress traffic to port 8080
+      FIREWALL_DEBUG: "on"                  # Enable firewall debugging (temporarily)
+      JOURNALD: "off"                       # Disable journald (not needed for debugging)
+      
+      # Optional port forwarding
+      VPN_PORT_FORWARDING: "off"

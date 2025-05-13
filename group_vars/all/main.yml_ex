@@ -1,18 +1,20 @@
 ---
-
-
 # ----- Required variables --------- #
 
-# Time zone configuration
-timezone: "America/New_York"  # Change this to your desired time zone, e.g., "America/New_York"
+# Time and language configuration
+timezone: "America/New_York" # Change this to your desired time zone, e.g., "America/New_York"
+lang: en_US.UTF-8 # Change this to your language eg. en_US.UTF-8 used for lubelogger
+
+# Define IP for kubevip loadbalancer
+kube_vip_address: "192.168.1.200"
 
 # Domain configuration
-# Create A records:
+# Create A record:
 # *.<domain>, Answer <kube_vip_address> ex. 192.168.1.200
 domain: <DOMAIN>
 email: <EMAIL>
 
-# Cloudflare
+# --- Cloudflare --- #
 # If you want to use TLS certificates on apps enable cloudflare and define API token
 # Cloudflare api token settings:
 # Permissions: Zone - DNS - Edit; Zone - Zone - Edit
@@ -21,14 +23,25 @@ enable_cloudflare: false
 cloudflare_api_token: "<cloudflare api>"
 tls_secret_name: "wildcard-{{ domain }}-tls"
 
-# Git
+# --- Git --- #
 deploy_gitea: true
 git_organization_name: "homelab"
 git_repo_name: "argocd"
 deploy_gitlab: false
 
+# --- Backup --- #
+# Choose your backup solution
+# Backblaze
+# Create b2 bucket https://secure.backblaze.com/b2_buckets.htm
+enable_backblaze: true
+# NFS, Samba, CIFS configuration
+# More info
+# https://longhorn.io/docs/1.8.1/snapshots-and-backups/backup-and-restore/set-backup-target/set-up-nfs-backupstore
+enable_nfs: false
+
+# --- Apps --- #
 # Define which app to deploy
-# Change to false if you dont want to deploy the app
+# Allowed values true/false
 # Monitoring
 deploy_prometheus: true
 deploy_grafana: true
@@ -38,6 +51,7 @@ deploy_loki: true
 deploy_rancher: true
 deploy_authentik: true
 deploy_renovate: true
+deploy_wg_easy: true
 
 # Apps
 deploy_audiobookshelf: true
@@ -45,10 +59,48 @@ deploy_homeassistant: true
 deploy_recipya: true
 deploy_open_webui: true
 deploy_jellyfin: true
-deploy_arr: true
+deploy_arr: true # Will deploy sonarr radarr jellyserr qbittorrent-vpn
 deploy_homepage: true
 deploy_donetick: true
 deploy_paperless_ngx: true
+deploy_lubelogger: true
+
+# --- qbittorrent-vpn --- #
+# If you enabled arr
+# If you want to use qbittorrent behind vpn to hide your ip
+# It will install gluetun sidecar to route traffic through vpn provider of your choice
+# More info https://github.com/qdm12/gluetun
+vpn:
+  enabled: true
+  # Choose from: nordvpn, protonvpn, expressvpn, surfshark, mullvad, ivpn, private internet access, etc.
+  # More info https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers
+  provider: "nordvpn"
+  # Choose from: openvpn or wireguard
+  type: "openvpn"
+    # Server selection (comma-separated lists)
+  server_countries: "Netherlands"  # e.g., "Netherlands,Germany,Sweden"
+  server_cities: ""            # e.g., "Amsterdam,Frankfurt" (optional)
+  server_names: ""             # e.g., "nl1,nl2" (optional)
+  randomize: "true"           # Randomize server selection
+  # WireGuard specific settings (when type is "wireguard")
+  wireguard:
+    private_key: ""  # Will be stored in Secret if provided
+    private_key_existing_secret: ""
+    private_key_existing_secret_key: ""
+    addresses: ""   # e.g., "10.64.222.21/32"
+    endpoint_ip: ""  # Optional: specify endpoint IP
+    endpoint_port: ""  # Optional: specify endpoint port
+    public_key: ""   # Optional: server public key
+  # VPN credentials (choose one method)
+  credentials:
+    create: true # set to false if using existing secret
+    # For OpenVPN (normal credentials)
+    username: ""
+    password: ""
+    # Alternatively, reference an existing secret
+    existingSecret: ""
+    usernameKey: "username"
+    passwordKey: "password"
 
 # ----- Optional variables --------- #
 
@@ -56,7 +108,6 @@ deploy_paperless_ngx: true
 rke2_version: "v1.32.3+rke2r1"
 install_rke2_type: "server"
 kube_vip_version: "v0.9.1"
-kube_vip_address: "192.168.1.200"
 rke2_hostname: "rke2.{{ domain }}"
 
 # Helm chart versions
@@ -72,6 +123,7 @@ gitlab_version: 8.8.0
 gitea_version: 11.0.1
 reflector_version: 7.1.288
 renovate_version: 39.251.0
+wg_easy_version: 0.1.2
 
 # Monitoring
 prometheus_stack_version: 70.4.1
@@ -92,8 +144,9 @@ recipya_version: 0.0.2
 radarr_version: 1.15.1
 sonarr_version: 1.10.1
 prowlarr_version: 1.41.1
-qbittorrent_version: 0.4.1
+qbittorrent_vpn_version: 0.0.1
 jellyseerr_version: 0.0.1
+lubelogger_version: 0.6.2
 
 # Server configuration
 perform_full_upgrade: true

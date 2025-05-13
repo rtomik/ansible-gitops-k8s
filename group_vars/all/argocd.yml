@@ -109,11 +109,11 @@ app_definitions:
     version: "{{ prowlarr_version }}"
     repo: "https://charts.pree.dev"
     namespace: "arr"
-  qbittorrent:
+  qbittorrent-vpn:
     enabled: "{{ deploy_arr }}"
-    chart_name: "qbittorrent"
-    version: "{{ qbittorrent_version }}"
-    repo: "https://charts.gabe565.com"
+    chart_name: "qbittorrent-vpn"
+    version: "{{ qbittorrent_vpn_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
     namespace: "arr"
   jellyseerr:
     enabled: "{{ deploy_arr }}"
