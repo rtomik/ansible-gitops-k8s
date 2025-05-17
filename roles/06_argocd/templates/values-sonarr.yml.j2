@@ -6,6 +6,8 @@ sonarr:
 
   env:
     TZ: {{ timezone }}
+    PUID: "0"
+    PGID: "0"
   
   ingress:
     main:
@@ -22,7 +24,6 @@ sonarr:
       tls:
         - hosts:
             - sonarr.{{ domain }}
-
   
   persistence:
     config:
@@ -31,3 +32,11 @@ sonarr:
       size: 2Gi
       storageClass: longhorn
       mountPath: /config  
+
+{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %}
+    media:
+      enabled: true
+      type: pvc
+      mountPath: /downloads  
+      existingClaim: qbittorrent-data
+{% else %}      

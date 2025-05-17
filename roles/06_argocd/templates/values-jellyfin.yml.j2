@@ -1,5 +1,5 @@
+# default values https://github.com/jellyfin/jellyfin-helm/blob/master/charts/jellyfin/values.yaml
 jellyfin:
-
   ingress:
     enabled: true
     className: traefik
@@ -15,6 +15,14 @@ jellyfin:
       - hosts:
           - jellyfin.{{ domain }}
 
+  podSecurityContext:
+    fsGroup: 0
+  
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+  
+
   persistence:
     config:
       enabled: true
@@ -22,3 +30,9 @@ jellyfin:
       storageClass: longhorn
       accessMode: ReadWriteOnce
       size: 1Gi
+{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %} 
+    media:
+      enabled: true
+      type: pvc
+      existingClaim: qbittorrent-data
+{% else %}    

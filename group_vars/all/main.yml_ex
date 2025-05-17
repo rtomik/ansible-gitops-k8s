@@ -2,46 +2,100 @@
 # ----- Required variables --------- #
 
 # Time and language configuration
-timezone: "America/New_York" # Change this to your desired time zone, e.g., "America/New_York"
+timezone: "UTC" # Change this to your desired time zone, e.g., "America/New_York"
 lang: en_US.UTF-8 # Change this to your language eg. en_US.UTF-8 used for lubelogger
 
 # Define IP for kubevip loadbalancer
-kube_vip_address: "192.168.1.200"
+kube_vip_address: "192.168.1.200" # free ip in your network range
 
-# Domain configuration
+# --- Domain Configuration --- #
 # Create A record:
 # *.<domain>, Answer <kube_vip_address> ex. 192.168.1.200
-domain: <DOMAIN>
-email: <EMAIL>
+domain: mydomain.com
+email: my@email.com
 
 # --- Cloudflare --- #
-# If you want to use TLS certificates on apps enable cloudflare and define API token
+# If you want to use TLS certificates
 # Cloudflare api token settings:
 # Permissions: Zone - DNS - Edit; Zone - Zone - Edit
 # Zone Resources: Include - All Zones
 enable_cloudflare: false
-cloudflare_api_token: "<cloudflare api>"
+cloudflare_api_token: "cloudflare api"
 tls_secret_name: "wildcard-{{ domain }}-tls"
 
 # --- Git --- #
+# Gitea is used as main git repo currently
 deploy_gitea: true
 git_organization_name: "homelab"
 git_repo_name: "argocd"
 deploy_gitlab: false
 
+# --- VPN Access --- #
+# If you want to access the cluster via Tailscale VPN
+tailscale:
+  enabled: false
+  auth_key: "tailscale auth key"
+  # Define your local subnet ex. 192.168.1.0/24
+  subnet: 192.168.1.0/24
+  hostname: "rke2-cluster"
+  version: "latest"
+  image_pull_policy: "IfNotPresent"
+  force_update: false
+  extra_routes: []
+  tags: []
+
+# --- External Storage --- #
+external_storage:
+  enabled: false
+  nas:
+    - name: "media"
+      enabled: false
+      type: "smb" # smb or nfs
+      server: "//storagebox.de/user/media"
+
+      # SMB specific settings
+      smb:
+        driver_version: "v1.18.0"
+        user: ""
+        password: ""
+
+      # NFS specific settings
+      nfs:
+        path: "/volume1/media"
+        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+
+      # Storage configuration
+      size: "1Ti"
+      storage_class: "media-storage"
+      reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
+      access_mode: "ReadWriteMany"
+
+  # Define your applications that need storage
+  applications:
+    qbittorrent:
+      enabled: true
+      storage_name: "media"
+      namespace: "arr"
+      size: "500Gi"
+
+
 # --- Backup --- #
-# Choose your backup solution
+# Choose your backup solution - work in progress
 # Backblaze
 # Create b2 bucket https://secure.backblaze.com/b2_buckets.htm
-enable_backblaze: true
+backblaze:
+  enabled: false
+
 # NFS, Samba, CIFS configuration
 # More info
 # https://longhorn.io/docs/1.8.1/snapshots-and-backups/backup-and-restore/set-backup-target/set-up-nfs-backupstore
 enable_nfs: false
 
+
 # --- Apps --- #
 # Define which app to deploy
 # Allowed values true/false
+
 # Monitoring
 deploy_prometheus: true
 deploy_grafana: true
@@ -71,7 +125,7 @@ deploy_lubelogger: true
 # It will install gluetun sidecar to route traffic through vpn provider of your choice
 # More info https://github.com/qdm12/gluetun
 vpn:
-  enabled: true
+  enabled: false
   # Choose from: nordvpn, protonvpn, expressvpn, surfshark, mullvad, ivpn, private internet access, etc.
   # More info https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers
   provider: "nordvpn"
@@ -141,7 +195,7 @@ donetick_version: 1.0.1
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.24.1
 recipya_version: 0.0.2
-radarr_version: 1.15.1
+radarr_version: 1.12.0
 sonarr_version: 1.10.1
 prowlarr_version: 1.41.1
 qbittorrent_vpn_version: 0.0.1

@@ -22,6 +22,8 @@
     - { name: emberstack, url: "https://emberstack.github.io/helm-charts"}
     - { name: gitea, url: "https://dl.gitea.io/charts"}
     - { name: authentik, url: "https://charts.goauthentik.io/"}
+    - { name: csi-driver-smb, url: "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts"}
+    
   tags:
     - infra
     - infra:repos
@@ -73,7 +75,9 @@
     - infra:git
     - infra:gitlab
 
-# - import_tasks: rancher.yml
-#   tags:
-#     - infra
-#     - infra:rancher
+- import_tasks: external_storage.yml
+  tags:
+    - infra
+    - infra:externalstorage
+    - infra:storage
+    - infra:nas

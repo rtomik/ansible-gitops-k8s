@@ -25,7 +25,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 | GitOps & Management | - ArgoCD (GitOps CD)<br>- Rancher (Kubernetes Management)<br>- Gitea (Source Control)<br>- Renovate (Dependency Automation)|
 | Security | - Authentik (SSO/IAM) |
 | Monitoring Stack | - Prometheus (Metrics)<br>- Grafana (Visualization)<br>- Loki (Log Aggregation) |
-| Other | - Homepage (Dashboard)<br>- Jellyfin (Media server)<br>- Donetick (Task management) |
+| Other | - Homepage (Dashboard)<br>- Jellyfin (Media server)<br>- Arr-stack (Media management)<br>- Donetick (Task management) |
 
 ### Features
 
@@ -57,9 +57,6 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
   - Recommended: 3 nodes for HA
   - [Low-cost mini PC options](https://www.lowcostminipcs.com/)
 
-- **My Setup:**
-  - HP ProDesk 600 G3 mini - i3 7300t/16GB RAM/500GB SSD cost 65 €
-  - GenMachine Mini PC - AMD 5300U/16GB RAM/500GB SSD cost 150 €
 
 ### Network Requirements
 - SSH access to all nodes (root SSH keys)
@@ -158,8 +155,11 @@ Some apps needs to be configured manually
 
 ### Configure Apps
 
+#### Tailscale
+   - If you enabled Tailscale, in machine list select rke2-cluster > Edit Route settings > Approve All
+
 #### Qbittorent
-   - If you enabled qbittorent with VPN check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  
+   - If you enabled qbittorent with VPN, check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  
 
 #### Jellyfin
    - Intial setup https://jellyfin.< DOMAIN >/web/#/wizardstart.html
@@ -168,8 +168,9 @@ Some apps needs to be configured manually
    - Initial setup https://jellyseerr.< DOMAIN >/setup
 
 #### Radarr, Sonarr add download client
+   - Configure login
    - Add Download Client - qBittorrent https://radarr.< DOMAIN >/settings/downloadclients
-   - Host: qbittorrent.arr.svc.cluster.local
+   - Host: qbittorrent-vpn.arr.svc.cluster.local
    - Port: 8080
    - User: admin
    - PW: Check logs from qbittorent pod

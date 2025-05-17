@@ -1,0 +1,189 @@
+- name: Configure Tailscale VPN
+  when: tailscale.enabled | bool
+  block:
+    - name: Validate Tailscale configuration
+      ansible.builtin.assert:
+        that:
+          - tailscale.auth_key is defined and tailscale.auth_key | length > 0
+          - tailscale.subnet is defined and tailscale.subnet | length > 0
+        fail_msg: "Tailscale configuration is invalid. Please check auth_key and subnet."
+
+    - name: Create namespace tailscale
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "tailscale"
+            labels:
+              app.kubernetes.io/name: tailscale
+              app.kubernetes.io/part-of: cluster-networking
+
+    - name: Create Secret tailscale
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: tailscale-auth
+            namespace: tailscale
+          type: Opaque
+          stringData:
+            TS_AUTH_KEY: "{{ tailscale.auth_key }}"
+
+    - name: Create script for tailscale
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: tailscale-config
+            namespace: tailscale
+          data:
+            ts-script.sh: |
+              #!/bin/sh
+              echo "Starting Tailscale subnet router..."
+              # Enable IP forwarding
+              echo 1 > /proc/sys/net/ipv4/ip_forward
+              # Start tailscaled
+              tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock &
+              # Wait for tailscaled to start
+              sleep 5
+
+              # Construct additional routes if provided
+              ROUTES="{{ tailscale.subnet }}"
+              {% if tailscale.extra_routes is defined and tailscale.extra_routes | length > 0 %}
+              ROUTES="${ROUTES},{{ tailscale.extra_routes | join(',') }}"
+              {% endif %}
+
+              # Connect to Tailscale network
+              tailscale up \
+                --authkey=${TS_AUTH_KEY} \
+                --hostname={{ tailscale.hostname | default('rke2-cluster') }} \
+                --advertise-routes=10.42.0.0/16,10.43.0.0/16,${ROUTES} \
+                --accept-routes \
+                {% if tailscale.tags is defined and tailscale.tags | length > 0 %}
+                --advertise-tags={{ tailscale.tags | join(',') }} \
+                {% endif %}
+                --reset
+
+              # Keep the container running with status check
+              while true; do
+                sleep 60
+                # Log status but continue even if command fails
+                tailscale status || echo "Tailscale status check failed"
+              done
+
+    - name: Create PVC for tailscale
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: tailscale-state
+            namespace: tailscale
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: "100Mi"
+            storageClassName: "longhorn"
+
+    - name: Create deployment for tailscale
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: tailscale-subnet-router
+            namespace: tailscale
+            labels:
+              app: tailscale-subnet-router
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: tailscale-subnet-router
+            strategy:
+              type: Recreate
+            template:
+              metadata:
+                labels:
+                  app: tailscale-subnet-router
+              spec:
+                containers:
+                  - name: tailscale
+                    image: "tailscale/tailscale:{{ tailscale.version | default('latest') }}"
+                    imagePullPolicy: "{{ tailscale.image_pull_policy | default('IfNotPresent') }}"
+                    command:
+                      - "/bin/sh"
+                      - "/scripts/ts-script.sh"
+                    env:
+                      - name: TS_AUTH_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: tailscale-auth
+                            key: TS_AUTH_KEY
+                      - name: TS_HOSTNAME
+                        value: "{{ tailscale.hostname | default('rke2-cluster') }}"
+                      - name: TS_ROUTES
+                        value: "10.42.0.0/16,10.43.0.0/16,{{ tailscale.subnet }}"
+                      - name: TS_STATE_DIR
+                        value: "/var/lib/tailscale"
+                    securityContext:
+                      privileged: true
+                      capabilities:
+                        add:
+                          - NET_ADMIN
+                          - SYS_MODULE
+                    volumeMounts:
+                      - name: devnet
+                        mountPath: /dev/net
+                      - name: tailscale-state
+                        mountPath: /var/lib/tailscale
+                      - name: tmp
+                        mountPath: /tmp
+                      - name: scripts
+                        mountPath: /scripts
+                    resources:
+                      requests:
+                        memory: "64Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "128Mi"
+                        cpu: "200m"
+                    livenessProbe:
+                      exec:
+                        command:
+                          - tailscale
+                          - status
+                      initialDelaySeconds: 30
+                      periodSeconds: 60
+                      timeoutSeconds: 5
+                volumes:
+                  - name: devnet
+                    hostPath:
+                      path: /dev/net
+                  - name: tailscale-state
+                    persistentVolumeClaim:
+                      claimName: tailscale-state
+                  - name: tmp
+                    emptyDir: {}
+                  - name: scripts
+                    configMap:
+                      name: tailscale-config
+                      defaultMode: 0755
+                hostNetwork: true
+                dnsPolicy: ClusterFirstWithHostNet  
+
+  rescue:
+    - name: Handle deployment failure
+      ansible.builtin.debug:
+        msg: "Failed to deploy Tailscale. Check the error messages above."
+      failed_when: true

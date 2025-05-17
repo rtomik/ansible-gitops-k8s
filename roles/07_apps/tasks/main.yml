@@ -16,3 +16,7 @@
 #     - apps:homeassistant
 #     - apps:smarthome
 
+- import_tasks: tailscale.yml
+  tags:
+    - apps
+    - apps:tailscale

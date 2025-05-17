@@ -1,33 +1,43 @@
 radarr:
-  image:
-    repository: ghcr.io/hotio/radarr
+  image: 
+    repository: hotio/radarr
     pullPolicy: IfNotPresent
-    tag: "release-5.21.1.9799"
+    tag: ""
 
   env:
     TZ: {{ timezone }}
-  
-  ingress:
-    main:
-      enabled: true
-      className: traefik
-      annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: websecure
-        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
-      hosts:
-        - host: radarr.{{ domain }}
-          paths:
-            - path: /
-              pathType: ImplementationSpecific
-      tls:
-        - hosts:
-            - radarr.{{ domain }}
+    PUID: "0"
+    PGID: "0"
 
-  
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: radarr.{{ domain }}
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls:
+      - hosts:
+          - radarr.{{ domain }}
+
+  # Main application storage
   persistence:
-    config:
-      enabled: true
-      accessMode: ReadWriteOnce
-      size: 2Gi
-      storageClass: longhorn
-      mountPath: /config
+    storageClass: "longhorn"
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 2Gi
+  
+{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %}
+    additionalVolumes:
+      - name: downloads
+        persistentVolumeClaim:
+          claimName: qbittorrent-data
+    
+    additionalMounts:
+      - name: downloads
+        mountPath: /downloads
+{% else %}          

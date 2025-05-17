@@ -78,7 +78,7 @@ app_definitions:
     chart_name: "jellyfin"
     version: "{{ jellyfin_version }}"
     repo: "https://jellyfin.github.io/jellyfin-helm"
-    namespace: "jellyfin"
+    namespace: "arr"
   paperless-ngx:
     enabled: "{{ deploy_paperless_ngx }}"
     chart_name: "paperless-ngx"
@@ -95,7 +95,7 @@ app_definitions:
     enabled: "{{ deploy_arr }}"
     chart_name: "radarr"
     version: "{{ radarr_version }}"
-    repo: "https://charts.pree.dev"
+    repo: "https://charts.alekc.dev"
     namespace: "arr"
   sonarr:
     enabled: "{{ deploy_arr }}"

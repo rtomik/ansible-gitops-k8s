@@ -42,12 +42,11 @@ homepage:
             href: https://longhorn.{{ domain }}/
             description: Cloud Native Storage
             icon: /icons/longhorn.svg
-{% if deploy_arr %}
-        - qBittorrent:
-            href: https://qbittorrent.{{ domain }}
-            description: Indexer
-            icon: /icons/qbittorrent.svg      
-{% endif %}
+{% if deploy_wg_easy %}
+        - Gitea:
+            href: https://wgeasy.{{ domain }}/
+            description: Wireguard VPN
+{% endif %}        
       - Monitoring:
         - Prometheus:
             href: https://prometheus.{{ domain }}/
@@ -128,7 +127,12 @@ homepage:
             description: Car Manager
             icon: 
 {% endif %}
-
+{% if deploy_arr %}
+        - qBittorrent:
+            href: https://qbittorrent.{{ domain }}
+            description: Torrents
+            icon: /icons/qbittorrent.svg      
+{% endif %}
 
     widgets:
       - kubernetes:

@@ -14,6 +14,8 @@ qbittorrent-vpn:
       - hosts:
           - qbittorrent.{{ domain }}
 
+  podSecurityContext: null
+
   qbittorrent:
     image:
       repository: linuxserver/qbittorrent
@@ -21,6 +23,27 @@ qbittorrent-vpn:
     env:
       - name: TZ
         value: "{{ timezone }}"
+      - name: PUID
+        value: "0"
+      - name: PGID
+        value: "0"
+          
+    securityContext: null   
+{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %}
+    persistence:
+      config:
+        enabled: true
+        storageClass: "longhorn"
+        accessMode: ReadWriteOnce
+        size: 2Gi
+        mountPath: /config
+      
+      downloads:
+        enabled: true
+        existingClaim: "qbittorrent-data"
+        mountPath: /downloads
+{% else %}
+    # Fall back to default storage configuration
     persistence:
       config:
         enabled: true
@@ -34,7 +57,8 @@ qbittorrent-vpn:
         storageClass: "longhorn"
         accessMode: ReadWriteOnce
         size: 2Gi
-        mountPath: /downloads  
+        mountPath: /downloads
+{% endif %}
         
   gluetun:
     enabled: {{ vpn.enabled }}
