@@ -5,7 +5,6 @@ jellyfin:
     className: traefik
     annotations:
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
     hosts:
       - host: jellyfin.{{ domain }}
         paths:
@@ -35,4 +34,4 @@ jellyfin:
       enabled: true
       type: pvc
       existingClaim: qbittorrent-data
-{% else %}    
+{% endif %}    
