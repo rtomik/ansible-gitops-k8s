@@ -1,4 +1,4 @@
-# GitOps Ansible RKE2 
+# Ansible GitOps K8s Project 
 
 This project aims to easily deploy RKE2 Cluster via Ansible. With various applications and services, following GitOps principles. 
 
@@ -71,7 +71,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 1. **Clone and prepare configuration**
    ```bash
-   git clone https://github.com/rtomik/rke2-ha-cluster.git && cd rke2-ha-cluster\
+   git clone https://github.com/rtomik/ansible-gitops-k8s.git && cd ansible-gitops-k8s\
    mv inventory.yml_ex inventory.yml && \
    mv group_vars/all/main.yml_ex group_vars/all/main.yml
    ```
@@ -208,5 +208,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - 🌟 Star this repo if you find it helpful!
-- 🐛 Report issues in the [Issue Tracker](https://github.com/rtomik/rke2-ha-cluster/issues)
+- 🐛 Report issues in the [Issue Tracker](https://github.com/rtomik/ansible-gitops-k8s/issues)
 - 📝 Submit improvements via Pull Requests
