@@ -6,7 +6,7 @@
     - role: 01_local
       tags:
         - local
-
+        
 - name: 02 Check if ansible user exists and create if necessary
   hosts: all
   gather_facts: false
@@ -55,6 +55,8 @@
 
 - name: 03 Prepare and harden servers
   hosts: all
+  vars_files:
+    - "../group_vars/all/vault.yaml"  
   become: true
   vars:
     ansible_user: "ansible"
@@ -71,6 +73,8 @@
 
 - name: 04 Deploy rke2 cluster
   hosts: rke2_cluster
+  vars_files:
+    - "../group_vars/all/vault.yaml"  
   become: true
   serial: 1
   vars:
@@ -85,6 +89,7 @@
   become: true
   vars_files:
     - "../group_vars/all/authentik.yml"  
+    - "../group_vars/all/vault.yaml"      
   vars:
     ansible_user: "ansible"
   roles:
@@ -97,6 +102,7 @@
   become: true
   vars_files:
     - "../group_vars/all/argocd.yml"
+    - "../group_vars/all/vault.yaml"      
   vars:
     ansible_user: "ansible"
   roles:

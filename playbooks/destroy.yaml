@@ -1,0 +1,104 @@
+---
+- hosts: rke2_cluster
+  tasks:
+    - name: Stop rke2-server service
+      systemd:
+        name: rke2-server
+        state: stopped
+      ignore_errors: true
+
+    - name: Stop rke2-agent service
+      systemd:
+        name: rke2-agent
+        state: stopped
+      ignore_errors: true
+
+    - name: Uninstall rke2-server
+      command: /usr/local/bin/rke2-uninstall.sh
+      ignore_errors: true
+
+    - name: Uninstall rke2-agent
+      command: /usr/local/bin/rke2-agent-uninstall.sh
+      ignore_errors: true
+
+    - name: Remove rke2 binary
+      file:
+        path: /usr/local/bin/rke2
+        state: absent
+
+    - name: Remove rke2 data directory
+      file:
+        path: /var/lib/rancher/rke2
+        state: absent
+
+    - name: Remove rke2 configuration directory
+      file:
+        path: /etc/rancher/rke2
+        state: absent
+
+    - name: Remove CNI configuration
+      file:
+        path: /etc/cni
+        state: absent
+
+    - name: Remove containerd configuration
+      file:
+        path: /etc/containerd
+        state: absent
+
+    - name: Remove systemd unit files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/rke2-server.service
+        - /etc/systemd/system/rke2-agent.service
+        - /etc/systemd/system/rke2-server.env
+        - /etc/systemd/system/rke2-agent.env
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Remove local kubeconfig
+      file:
+        path: "{{ playbook_dir }}/../rke2-kubeconfig.yaml"
+        state: absent
+      delegate_to: localhost
+      run_once: true
+
+    - name: Remove Helm
+      file:
+        path: /usr/local/bin/helm
+        state: absent
+
+    - name: Remove kubectl
+      file:
+        path: /usr/local/bin/kubectl
+        state: absent
+
+    - name: Remove crictl
+      file:
+        path: /usr/local/bin/crictl
+        state: absent
+
+    - name: Remove ctr
+      file:
+        path: /usr/local/bin/ctr
+        state: absent
+
+    - name: Clean up iptables rules (optional but recommended)
+      shell: |
+        iptables -F
+        iptables -X
+        iptables -t nat -F
+        iptables -t nat -X
+        iptables -t mangle -F
+        iptables -t mangle -X
+      ignore_errors: true
+
+    - name: Remove network interfaces (optional cleanup)
+      shell: |
+        ip link delete cni0 2>/dev/null || true
+        ip link delete flannel.1 2>/dev/null || true
+      ignore_errors: true

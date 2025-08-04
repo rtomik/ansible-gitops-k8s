@@ -104,7 +104,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 4. **To deploy specific components, use tags**
    ```
-   ansible-playbook playbooks/all.yml --tags "k3s"
+   ansible-playbook playbooks/all.yml --tags infra
    ```
 
 5. **To destroy the cluster and remove everything**
