@@ -79,18 +79,6 @@ external_storage:
       size: "500Gi"
 
 
-# --- Backup --- #
-# Choose your backup solution - work in progress
-# Backblaze
-# Create b2 bucket https://secure.backblaze.com/b2_buckets.htm
-backblaze:
-  enabled: false
-
-# NFS, Samba, CIFS configuration
-# More info
-# https://longhorn.io/docs/1.8.1/snapshots-and-backups/backup-and-restore/set-backup-target/set-up-nfs-backupstore
-enable_nfs: false
-
 
 # --- Apps --- #
 # Define which app to deploy
