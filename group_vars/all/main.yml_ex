@@ -159,7 +159,7 @@ vpn:
 # ----- Optional variables --------- #
 
 # RKE2 cluster variables
-rke2_version: "v1.32.3+rke2r1"
+rke2_version: "v1.32.6+rke2r1"
 install_rke2_type: "server"
 kube_vip_version: "v0.9.1"
 rke2_hostname: "rke2.{{ domain }}"
