@@ -81,3 +81,11 @@
     - infra:externalstorage
     - infra:storage
     - infra:nas
+
+- import_tasks: external_storage_sftp.yml
+  tags:
+    - infra
+    - infra:externalstorage
+    - infra:storage
+    - infra:nas
+    

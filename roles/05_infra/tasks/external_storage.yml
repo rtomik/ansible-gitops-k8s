@@ -33,17 +33,7 @@
         label: "{{ item.name }}"
       when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
 
-    # - name: Deploy SMB CSI driver
-    #   kubernetes.core.helm:
-    #     name: csi-driver-smb
-    #     chart_ref: csi-driver-smb/csi-driver-smb
-    #     chart_version: "{{ external_storage.nas[0].smb.driver_version }}"
-    #     release_namespace: kube-system
-    #     wait: true
-    #     wait_timeout: 3m
-    #   when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
-
-    # NFS configuration (if needed)
+    # NFS configuration
     - name: Install NFS CSI Driver
       kubernetes.core.helm:
         name: nfs-subdir-external-provisioner
@@ -55,7 +45,7 @@
           nfs:
             server: "{{ external_storage.nas | selectattr('type', 'equalto', 'nfs') | map(attribute='server') | first | default('') }}"
             path: "{{ external_storage.nas | selectattr('type', 'equalto', 'nfs') | map(attribute='nfs.path') | first | default('') }}"
-      when: external_storage.nas | selectattr('type', 'equalto', 'nfs') | list | length > 0
+      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'nfs') | list | length > 0
 
     # Create storage classes - separated by type
     - name: Create Storage Classes for SMB
@@ -66,6 +56,8 @@
           kind: StorageClass
           metadata:
             name: "{{ item.storage_class }}"
+            labels:
+              storage-type: smb
           provisioner: "smb.csi.k8s.io"
           reclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
           volumeBindingMode: Immediate
@@ -88,6 +80,8 @@
           kind: StorageClass
           metadata:
             name: "{{ item.storage_class }}"
+            labels:
+              storage-type: nfs
           provisioner: "nfs-client"
           reclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
           volumeBindingMode: Immediate
@@ -100,8 +94,24 @@
         label: "{{ item.name }}"
       when: external_storage.nas | selectattr('type', 'equalto', 'nfs') | list | length > 0
 
+    - name: Create namespaces for applications that need external storage
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item.value.namespace | default(item.key) }}"
+            labels:
+              app.kubernetes.io/name: "{{ item.key }}"
+              app.kubernetes.io/part-of: external-storage
+      loop: "{{ external_storage.applications | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: item.value.enabled | bool
+
     # Create PVCs for applications
-    - name: Create PVCs for Applications
+    - name: Create PVCs for Applications (SMB/NFS)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -110,6 +120,9 @@
           metadata:
             name: "{{ item.key }}-data"
             namespace: "{{ item.value.namespace | default(item.key) }}"
+            labels:
+              app: "{{ item.key }}"
+              storage-type: "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='type') | first }}"
           spec:
             accessModes:
               - "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='access_mode') | first | default('ReadWriteMany') }}"
@@ -120,4 +133,9 @@
       loop: "{{ external_storage.applications | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
-      when: item.value.enabled | bool
+      vars:
+        matching_storage: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('name', 'equalto', item.value.storage_name) | list }}"
+      when:
+        - item.value.enabled | bool
+        - matching_storage | length > 0
+        - matching_storage[0].type in ['smb', 'nfs']

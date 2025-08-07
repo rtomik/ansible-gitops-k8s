@@ -1,0 +1,15 @@
+.vscode
+ansible_env
+.vault
+group_vars/all/main.yml
+group_vars/all/vault.yml
+inventory.yml
+k3s-kubeconfig.yaml
+playbooks/requirements.yml
+rke-kubeconfig.yaml
+group_vars/vault.yml
+*_rsa
+*_rsa.pub
+*.key
+*.pem
+known_hosts

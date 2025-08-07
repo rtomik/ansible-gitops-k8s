@@ -20,7 +20,7 @@ email: my@email.com
 # Permissions: Zone - DNS - Edit; Zone - Zone - Edit
 # Zone Resources: Include - All Zones
 enable_cloudflare: false
-cloudflare_api_token: "cloudflare api"
+cloudflare_api_token: "<cloudflare api>"
 tls_secret_name: "wildcard-{{ domain }}-tls"
 
 # --- Git --- #
@@ -34,7 +34,7 @@ deploy_gitlab: false
 # If you want to access the cluster via Tailscale VPN
 tailscale:
   enabled: false
-  auth_key: "tailscale auth key"
+  auth_key: "<tailscale auth key>"
   # Define your local subnet ex. 192.168.1.0/24
   subnet: 192.168.1.0/24
   hostname: "rke2-cluster"
@@ -45,12 +45,14 @@ tailscale:
   tags: []
 
 # --- External Storage --- #
+
 external_storage:
-  enabled: false
+  enabled: true
   nas:
-    - name: "media"
+    # SMB/CIFS Example
+    - name: "smb"
       enabled: false
-      type: "smb" # smb or nfs
+      type: "smb" # smb, nfs, or sftp
       server: "//storagebox.de/user/media"
 
       # SMB specific settings
@@ -59,26 +61,64 @@ external_storage:
         user: ""
         password: ""
 
-      # NFS specific settings
-      nfs:
-        path: "/volume1/media"
-        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
-
       # Storage configuration
       size: "1Ti"
       storage_class: "media-storage"
       reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
       access_mode: "ReadWriteMany"
 
+    # SFTP Example
+    - name: "media"
+      enabled: true
+      type: "sftp"
+      server: "000000-sub1.your-storagebox.de"  
+
+      # SFTP specific settings
+      ssh:
+        port: "23"
+      sftp:
+        user: "000000-sub1"  # Your storage box username
+        port: "22"
+        path: "/media"       # Root path or subdirectory like "/backup"
+        password: ""
+
+        # Optional settings
+        image: "alpine:3.18"
+        health_check_interval: "30"
+        extra_options:
+          - "cache=yes"
+          - "cache_timeout=60"
+
+      # Storage configuration
+      size: "1Ti"
+      reclaim_policy: "Retain"
+      access_mode: "ReadWriteMany"
+
+    # NFS Example
+    - name: "nfs"
+      enabled: false
+      type: "nfs"
+      server: "192.168.1.100"
+
+      # NFS specific settings
+      nfs:
+        path: "/volume1/kubernetes"
+        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+
+      # Storage configuration
+      size: "2Ti"
+      storage_class: "nfs-fast"
+      reclaim_policy: "Retain"
+      access_mode: "ReadWriteMany"
+
   # Define your applications that need storage
   applications:
     qbittorrent:
       enabled: true
-      storage_name: "media"
+      storage_name: "media"  # Must match one of the 'name' fields above
       namespace: "arr"
       size: "500Gi"
-
-
+      pvc_name: qbittorrent-data
 
 # --- Apps --- #
 # Define which app to deploy
@@ -93,7 +133,7 @@ deploy_loki: true
 deploy_rancher: true
 deploy_authentik: true
 deploy_renovate: true
-deploy_wg_easy: true
+deploy_wg_easy: false
 
 # Apps
 deploy_audiobookshelf: true
@@ -159,7 +199,7 @@ certmanager_version: 1.16.3
 argocd_version: 7.8.15
 longhorn_version: 1.8.1
 authentik_version: 2024.12.2
-rancher_version: 2.11.1
+rancher_version: 2.11.3
 metallb_version: 0.14.9
 gitlab_version: 8.8.0
 gitea_version: 11.0.1
@@ -183,12 +223,13 @@ donetick_version: 1.0.1
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.24.1
 recipya_version: 0.0.2
-radarr_version: 1.12.0
+radarr_version: 1.14.0
 sonarr_version: 1.10.1
 prowlarr_version: 1.41.1
 qbittorrent_vpn_version: 0.0.1
 jellyseerr_version: 0.0.1
 lubelogger_version: 0.6.2
+
 
 # Server configuration
 perform_full_upgrade: true

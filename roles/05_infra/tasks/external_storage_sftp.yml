@@ -1,0 +1,407 @@
+---
+- name: Configure SFTP External Storage for Kubernetes
+  when:
+    - external_storage.enabled | default(false) | bool
+    - external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+  block:
+    # Phase 1: SSH Key Generation
+    - name: Create SSH key directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/ssh-keys"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate SSH key pairs for SFTP storage
+      community.crypto.openssh_keypair:
+        path: "{{ playbook_dir }}/ssh-keys/{{ item.name }}_rsa"
+        type: rsa
+        size: 4096
+        comment: "k8s-{{ inventory_hostname_short }}-{{ item.name }}-{{ ansible_date_time.date }}"
+        regenerate: "{{ item.sftp.regenerate_key | default('never') }}"
+        state: present
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      delegate_to: localhost
+      run_once: true
+
+    # Phase 2: Test SFTP Connection
+    - name: Test SFTP connection with existing key
+      ansible.builtin.shell: |
+        sftp -i {{ playbook_dir }}/ssh-keys/{{ item.name }}_rsa \
+             -o StrictHostKeyChecking=accept-new \
+             -o ConnectTimeout=10 \
+             -o BatchMode=yes \
+             -o PasswordAuthentication=no \
+             -P {{ item.sftp.port | default('22') }} \
+             {{ item.sftp.user }}@{{ item.server }} <<'EOF'
+        pwd
+        ls -la {{ item.sftp.path | default('.') }}
+        quit
+        EOF
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      register: sftp_test_results
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      failed_when: false
+
+    - name: Display SFTP connection test results
+      ansible.builtin.debug:
+        msg: |
+          {% if item.rc == 0 -%}
+          ✅ {{ item.item.name }}: SFTP connection successful
+          {%- else -%}
+          ❌ {{ item.item.name }}: SFTP connection failed - will install SSH key
+          {%- endif %}
+      loop: "{{ sftp_test_results.results }}"
+
+    # Phase 3: Install SSH keys for failed connections only
+    - name: Install SSH public keys for failed SFTP connections
+      ansible.builtin.shell: |
+        PUB_KEY=$(cat {{ playbook_dir }}/ssh-keys/{{ item.item.name }}_rsa.pub)
+        echo "$PUB_KEY" | sshpass -p "{{ item.item.sftp.password }}" ssh \
+          -o StrictHostKeyChecking=accept-new \
+          -o ConnectTimeout=15 \
+          -p {{ item.item.ssh.port | default('23') }} \
+          {{ item.item.sftp.user }}@{{ item.item.server }} \
+          "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+        {% endif %}
+      loop: "{{ sftp_test_results.results }}"
+      when:
+        - item.rc != 0  # Only install if SFTP connection failed
+        - item.item.sftp.password is defined  # Only if password is available
+      delegate_to: localhost
+      run_once: true
+      register: key_installation
+
+    # Phase 4: Verify SFTP connections after key installation
+    - name: Verify SFTP connections after key installation
+      ansible.builtin.shell: |
+        sftp -i {{ playbook_dir }}/ssh-keys/{{ item.item.name }}_rsa \
+             -o StrictHostKeyChecking=accept-new \
+             -o ConnectTimeout=10 \
+             -o BatchMode=yes \
+             -o PasswordAuthentication=no \
+             -P {{ item.item.sftp.port | default('22') }} \
+             {{ item.item.sftp.user }}@{{ item.item.server }} <<'EOF'
+        pwd
+        ls -la {{ item.item.sftp.path | default('.') }}
+        quit
+        EOF
+      loop: "{{ sftp_test_results.results }}"
+      when: item.rc != 0  # Only verify connections that initially failed
+      register: post_install_verification
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    # Phase 5: Final connection status check
+    - name: Final SFTP connection test for all servers
+      ansible.builtin.shell: |
+        sftp -i {{ playbook_dir }}/ssh-keys/{{ item.name }}_rsa \
+             -o StrictHostKeyChecking=accept-new \
+             -o ConnectTimeout=10 \
+             -o BatchMode=yes \
+             -o PasswordAuthentication=no \
+             -P {{ item.sftp.port | default('22') }} \
+             {{ item.sftp.user }}@{{ item.server }} <<'EOF'
+        pwd
+        ls -la {{ item.sftp.path | default('.') }}
+        quit
+        EOF
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      register: final_sftp_tests
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Fail if any SFTP connections are still not working
+      ansible.builtin.fail:
+        msg: |
+          ❌ SFTP Connection Failed: {{ item.item.name }}
+          Server: {{ item.item.server }}:{{ item.item.sftp.port | default('22') }}
+          User: {{ item.item.sftp.user }}
+          Path: {{ item.item.sftp.path | default('/') }}
+          
+          Troubleshooting:
+          1. Test manually: sftp -i {{ playbook_dir }}/ssh-keys/{{ item.item.name }}_rsa {{ item.item.sftp.user }}@{{ item.item.server }}
+          2. Check server SSH configuration
+          3. Verify user permissions on target path
+      loop: "{{ final_sftp_tests.results }}"
+      when: item.rc != 0
+
+    # Phase 6: Generate Kubernetes resources
+    - name: Generate known_hosts entries
+      ansible.builtin.command:
+        cmd: ssh-keyscan -p {{ item.sftp.port | default('22') }} {{ item.server }}
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      register: known_hosts_scan
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Read SSH private keys
+      ansible.builtin.slurp:
+        src: "{{ playbook_dir }}/ssh-keys/{{ item.name }}_rsa"
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      register: ssh_private_keys
+      delegate_to: localhost
+      run_once: true
+
+    # Phase 7: Deploy Kubernetes resources
+    - name: Create external storage namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: external-storage
+            labels:
+              app.kubernetes.io/managed-by: ansible
+
+    - name: Create SSH secrets for SFTP authentication
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ item.item.name }}-ssh-secret"
+            namespace: kube-system
+            labels:
+              storage-type: sftp
+              app.kubernetes.io/managed-by: ansible
+          type: Opaque
+          data:
+            ssh-private-key: "{{ item.content }}"
+            known-hosts: "{{ known_hosts_scan.results | selectattr('item.name', 'equalto', item.item.name) | map(attribute='stdout') | first | b64encode }}"
+      loop: "{{ ssh_private_keys.results }}"
+
+    - name: Deploy SFTP mount DaemonSet
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: "{{ item.name }}-sshfs-mounter"
+            namespace: kube-system
+            labels:
+              app: "{{ item.name }}-sshfs-mounter"
+              storage-type: sftp
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            selector:
+              matchLabels:
+                app: "{{ item.name }}-sshfs-mounter"
+            template:
+              metadata:
+                labels:
+                  app: "{{ item.name }}-sshfs-mounter"
+                  storage-type: sftp
+              spec:
+                hostNetwork: true
+                tolerations:
+                  - operator: Exists
+                containers:
+                - name: sshfs-mounter
+                  image: "{{ item.sftp.image | default('alpine:3.19') }}"
+                  command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    set -e
+                    apk add --no-cache openssh-client sshfs
+                    
+                    mkdir -p /host-mnt/{{ item.name }}-storage
+                    mkdir -p /root/.ssh
+                    chmod 700 /root/.ssh
+                    
+                    # Setup SSH key
+                    cp /etc/ssh-secret/ssh-private-key /root/.ssh/id_rsa
+                    chmod 600 /root/.ssh/id_rsa
+                    
+                    # Setup known_hosts
+                    base64 -d /etc/ssh-secret/known-hosts > /root/.ssh/known_hosts
+                    chmod 644 /root/.ssh/known_hosts
+                    
+                    # Mount SSHFS
+                    sshfs \
+                      -o allow_other,reconnect \
+                      -o StrictHostKeyChecking=accept-new \
+                      -o port={{ item.sftp.port | default('22') }} \
+                      {{ item.sftp.user }}@{{ item.server }}:{{ item.sftp.path | default('/') }} \
+                      /host-mnt/{{ item.name }}-storage
+                    
+                    # Keep container running and monitor mount
+                    while true; do
+                      if ! mountpoint -q /host-mnt/{{ item.name }}-storage; then
+                        echo "Mount lost, exiting..."
+                        exit 1
+                      fi
+                      sleep 30
+                    done
+                  securityContext:
+                    privileged: true
+                  volumeMounts:
+                  - name: host-mount
+                    mountPath: /host-mnt/{{ item.name }}-storage
+                    mountPropagation: Bidirectional
+                  - name: ssh-secret
+                    mountPath: /etc/ssh-secret
+                    readOnly: true
+                  livenessProbe:
+                    exec:
+                      command:
+                      - mountpoint
+                      - -q
+                      - /host-mnt/{{ item.name }}-storage
+                    initialDelaySeconds: 30
+                    periodSeconds: 30
+                volumes:
+                - name: host-mount
+                  hostPath:
+                    path: /mnt/{{ item.name }}-storage
+                    type: DirectoryOrCreate
+                - name: ssh-secret
+                  secret:
+                    secretName: "{{ item.name }}-ssh-secret"
+                    defaultMode: 0600
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+
+    - name: Create PersistentVolumes for SFTP storage
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: "{{ item.name }}-pv"
+            labels:
+              type: "{{ item.name }}-sftp"
+              storage-type: sftp
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            capacity:
+              storage: "{{ item.size }}"
+            accessModes:
+              - "{{ item.access_mode | default('ReadWriteMany') }}"
+            persistentVolumeReclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
+            hostPath:
+              path: /mnt/{{ item.name }}-storage
+              type: Directory
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+
+    - name: Create namespaces for applications requiring SFTP storage
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item.value.namespace | default(item.key) }}"
+            labels:
+              app.kubernetes.io/name: "{{ item.key }}"
+              app.kubernetes.io/part-of: external-storage
+              app.kubernetes.io/managed-by: ansible
+      loop: "{{ external_storage.applications | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: 
+        - external_storage.applications is defined
+        - item.value.enabled | bool
+        - external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+
+    - name: Create PVCs for SFTP applications
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: "{{ item.value.pvc_name | default(item.key + '-data') }}"
+            namespace: "{{ item.value.namespace | default(item.key) }}"
+            labels:
+              app.kubernetes.io/name: "{{ item.key }}"
+              app.kubernetes.io/component: data-storage
+              storage-type: sftp
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            accessModes:
+              - "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='access_mode') | first | default('ReadWriteMany') }}"
+            resources:
+              requests:
+                storage: "{{ item.value.size | default('1Gi') }}"
+            selector:
+              matchLabels:
+                type: "{{ item.value.storage_name }}-sftp"
+            storageClassName: ""  # Use manual binding
+      loop: "{{ external_storage.applications | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        matching_storage: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('name', 'equalto', item.value.storage_name) | selectattr('type', 'equalto', 'sftp') | list }}"
+      when:
+        - external_storage.applications is defined
+        - item.value.enabled | bool
+        - matching_storage | length > 0
+
+    - name: Wait for PVCs to bind to SFTP PVs
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: "{{ item.value.pvc_name | default(item.key + '-data') }}"
+        namespace: "{{ item.value.namespace | default(item.key) }}"
+        wait: true
+        wait_condition:
+          type: Bound
+          status: "True"
+        wait_timeout: 60
+      loop: "{{ external_storage.applications | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when:
+        - external_storage.applications is defined
+        - item.value.enabled | bool
+        - external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+      register: pvc_binding_status
+
+    # Phase 8: Display setup summary
+    - name: Display SFTP setup summary
+      ansible.builtin.debug:
+        msg: |
+          ✅ SFTP External Storage Setup Complete
+          =====================================
+          
+          📁 SSH Keys: {{ playbook_dir }}/ssh-keys/
+          
+          📊 Configured Storage:
+          {% for storage in external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') %}
+          📦 {{ storage.name }}:
+             🏠 Server: {{ storage.server }}:{{ storage.sftp.port | default('22') }}
+             👤 User: {{ storage.sftp.user }}
+             📂 Path: {{ storage.sftp.path | default('/') }}
+             📏 Size: {{ storage.size }}
+          {% endfor %}
+          
+          🚀 Next Steps:
+          1. Verify DaemonSet pods: kubectl get pods -n kube-system -l storage-type=sftp
+          2. Check mount status: kubectl logs -n kube-system -l storage-type=sftp
+          3. Create PVCs to use the storage
+
+  rescue:
+    - name: Handle SFTP setup failures
+      ansible.builtin.debug:
+        msg: |
+          ❌ SFTP Setup Failed
+          ===================
+          
+          Check the errors above and verify:
+          1. Network connectivity to SFTP servers
+          2. SSH credentials and permissions
+          3. Kubernetes cluster accessibility
+          4. Required Ansible modules are installed
+          
+          Re-run with: ansible-playbook -vv playbook.yml --tags sftp

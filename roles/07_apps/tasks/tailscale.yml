@@ -180,7 +180,7 @@
                       name: tailscale-config
                       defaultMode: 0755
                 hostNetwork: true
-                dnsPolicy: ClusterFirstWithHostNet  
+                dnsPolicy: ClusterFirstWithHostNet
 
   rescue:
     - name: Handle deployment failure

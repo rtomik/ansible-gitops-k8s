@@ -1,13 +1,6 @@
 radarr:
-  image: 
-    repository: hotio/radarr
-    pullPolicy: IfNotPresent
-    tag: ""
-
   env:
     TZ: {{ timezone }}
-    PUID: "0"
-    PGID: "0"
 
   ingress:
     enabled: true
