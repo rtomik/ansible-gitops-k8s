@@ -13,3 +13,5 @@ group_vars/vault.yml
 *.key
 *.pem
 known_hosts
+.claudeignore
+CLAUDE.md

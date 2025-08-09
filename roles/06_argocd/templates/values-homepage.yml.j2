@@ -133,6 +133,11 @@ homepage:
             description: Torrents
             icon: /icons/qbittorrent.svg      
 {% endif %}
+{% if deploy_n8n %}
+        - n8n:
+            href: https://n8n.{{ domain }}
+            description: Automation tool
+{% endif %}
 
     widgets:
       - kubernetes:

@@ -15,12 +15,33 @@ jellyfin:
           - jellyfin.{{ domain }}
 
   podSecurityContext:
+{% if jellyfin_hw.enabled %}
+    fsGroup: 104  # Changed from 0 to 104 for video group access
+{% else %}
     fsGroup: 0
+{% endif %}
   
   securityContext:
+{% if jellyfin_hw.enabled %}
+    privileged: true  # Required for hardware acceleration
     runAsUser: 0
     runAsGroup: 0
-  
+{% else %}
+    runAsUser: 0
+    runAsGroup: 0
+{% endif %}
+
+{% if jellyfin_hw.enabled %}
+# Hardware acceleration volumes and mounts
+  volumes:
+    - name: jellyfin-hardware
+      hostPath:
+        path: {{ jellyfin_hw.path }}
+
+  volumeMounts:
+    - name: jellyfin-hardware
+      mountPath: {{ jellyfin_hw.path }}
+{% endif %}
 
   persistence:
     config:
@@ -34,4 +55,4 @@ jellyfin:
       enabled: true
       type: pvc
       existingClaim: qbittorrent-data
-{% endif %}    
+{% endif %}

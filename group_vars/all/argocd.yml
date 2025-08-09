@@ -127,6 +127,12 @@ app_definitions:
     version: "{{ lubelogger_version }}"
     repo: "https://anza-labs.github.io/charts"
     namespace: "lubelogger"
+  n8n:
+    enabled: "{{ deploy_n8n }}"
+    chart_name: "n8n"
+    version: "{{ n8n_version }}"
+    repo: "https://community-charts.github.io/helm-charts"
+    namespace: "n8n"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |

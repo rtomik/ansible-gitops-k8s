@@ -1,0 +1,30 @@
+# default values https://community-charts.github.io/helm-charts
+n8n:
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hosts:
+      - host: n8n.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - n8n.{{ domain }}
+  main:
+    persistence:
+      enabled: true
+      accessMode: ReadWriteOnce
+      size: 10Gi
+      storageClass: longhorn
+
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
