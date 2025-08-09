@@ -69,7 +69,7 @@ external_storage:
 
     # SFTP Example
     - name: "media"
-      enabled: true
+      enabled: false
       type: "sftp"
       server: "000000-sub1.your-storagebox.de"  
 
