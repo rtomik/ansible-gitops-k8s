@@ -84,7 +84,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 3. **Initial Deployment**
    NOTE: If you enabled cloudflare it can take some time to propagate new TLS certificate
    ```
-   ansible-playbook playbooks/all.yml
+   ansible-playbook playbooks/main.yml
    ```
    Kubeconfig will be stored in playbook dir
    ```
@@ -104,7 +104,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 4. **To deploy specific components, use tags**
    ```
-   ansible-playbook playbooks/all.yml --tags infra
+   ansible-playbook playbooks/main.yml --tags infra
    ```
 
 5. **To destroy the cluster and remove everything**
