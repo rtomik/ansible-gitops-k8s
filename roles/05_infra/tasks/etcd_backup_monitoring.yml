@@ -1,0 +1,54 @@
+---
+- name: Create etcd backup PrometheusRule
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata:
+        name: etcd-backup-alerts
+        namespace: etcd-backup
+        labels:
+          app: etcd-backup
+          prometheus: kube-prometheus
+          role: alert-rules
+      spec:
+        groups:
+          - name: etcd-backup.rules
+            rules:
+              - alert: EtcdBackupFailed
+                expr: |
+                  increase(kube_job_status_failed{job_name=~"etcd-backup-.*", namespace="etcd-backup"}[1h]) > 0
+                for: 5m
+                labels:
+                  severity: critical
+                  component: etcd-backup
+                annotations:
+                  summary: "etcd backup job failed"
+                  description: "etcd backup job {{ '{{' }} $labels.job_name {{ '}}' }} in namespace {{ '{{' }} $labels.namespace {{ '}}' }} has failed."
+
+              - alert: EtcdBackupMissing
+                expr: |
+                  time() - max(kube_job_status_completion_time{job_name=~"etcd-backup-.*", namespace="etcd-backup"}) > 86400 * 2
+                for: 10m
+                labels:
+                  severity: warning
+                  component: etcd-backup
+                annotations:
+                  summary: "etcd backup hasn't run successfully in over 2 days"
+                  description: "The last successful etcd backup was more than 2 days ago. Check the backup CronJob."
+
+              - alert: EtcdBackupStorageSpaceHigh
+                expr: |
+                  (kube_persistentvolumeclaim_resource_requests_storage_bytes{persistentvolumeclaim="etcd-backup-nfs-pvc", namespace="etcd-backup"} - kube_persistentvolumeclaim_status_capacity_bytes{persistentvolumeclaim="etcd-backup-nfs-pvc", namespace="etcd-backup"}) / kube_persistentvolumeclaim_resource_requests_storage_bytes{persistentvolumeclaim="etcd-backup-nfs-pvc", namespace="etcd-backup"} * 100 > 80
+                for: 15m
+                labels:
+                  severity: warning
+                  component: etcd-backup
+                annotations:
+                  summary: "etcd backup storage space is running low"
+                  description: "etcd backup storage utilization is above 80%."
+  when: etcd_backup.monitoring.enabled and deploy_prometheus
+  tags:
+    - infra
+    - infra:etcd-backup
+    - infra:monitoring

@@ -19,9 +19,10 @@ email: my@email.com
 # Cloudflare api token settings:
 # Permissions: Zone - DNS - Edit; Zone - Zone - Edit
 # Zone Resources: Include - All Zones
-enable_cloudflare: false
-cloudflare_api_token: "<cloudflare api>"
-tls_secret_name: "wildcard-{{ domain }}-tls"
+cloudflare:
+  enabled: false
+  api_token: "< API TOKEN >"
+  tls_secret_name: "wildcard-{{ domain }}-tls"
 
 # --- Git --- #
 # Gitea is used as main git repo currently
@@ -234,27 +235,29 @@ n8n_version: 1.13.8
 velero_version: 10.0.11
 
 
-# --- Backup Configuration --- #
-# Optional automated backup solution using Velero
-backup:
-  enabled: "{{ deploy_velero }}"
+# --- etcd Backup Configuration --- #
+# Automated etcd database backups for cluster state recovery
+etcd_backup:
+  enabled: true
   
-  # Storage backend for backups (choose one)
+  # Backup schedule (daily at 3 AM by default)
+  schedule: "0 3 * * *"
+  
+  # Storage backends for etcd backups (can enable multiple)
   storage:
-    # AWS S3 
+    # Amazon S3
     aws_s3:
       enabled: false
-      bucket: "my-cluster-backups"
+      bucket: "my-cluster-etcd-backups"
       region: "us-west-2"
-      # Use IAM roles or store in vault
+      # Use IAM roles or store credentials in vault
       access_key: "{{ vault_aws_access_key | default('') }}"
       secret_key: "{{ vault_aws_secret_key | default('') }}"
     
     # Backblaze B2 (S3-compatible)
     backblaze_b2:
       enabled: false
-      bucket: "my-cluster-backups"
-      # Backblaze B2 uses us-west-000 for S3 compatibility
+      bucket: "my-cluster-etcd-backups"
       region: "us-west-000"
       endpoint: "https://s3.us-west-000.backblazeb2.com"
       # Application Key ID and Application Key from Backblaze
@@ -267,53 +270,58 @@ backup:
       # NFS server configuration
       nfs:
         server: "192.168.1.100"
-        path: "/volume1/backups/kubernetes"
+        path: "/volume1/backups/etcd"
         mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
-      # Local storage path for backups
-      local_path: "/mnt/nas-backups"
-      # Storage size allocation
-      size: "500Gi"
-
-  # Backup schedules and retention
-  schedules:
-    # Full cluster backup (daily at 2 AM)
-    daily_backup:
-      enabled: true
-      schedule: "0 2 * * *"
-      ttl: "720h0m0s"  # 30 days retention
-      include_namespaces: []  # empty = all namespaces
-      exclude_namespaces: ["kube-system", "kube-public", "kube-node-lease"]
-      
-    # Critical data backup (every 6 hours)
-    critical_backup:
-      enabled: true
-      schedule: "0 */6 * * *"
-      ttl: "168h0m0s"  # 7 days retention
-      include_namespaces: ["authentik", "argocd", "monitoring", "longhorn-system"]
-      exclude_namespaces: []
-      
-    # Application data backup (weekly on Sunday at 1 AM)
-    weekly_backup:
-      enabled: true
-      schedule: "0 1 * * 0"
-      ttl: "2160h0m0s"  # 90 days retention
-      include_namespaces: ["arr", "n8n", "paperless-ngx", "audiobookshelf"]
-      exclude_namespaces: []
-
-  # Volume snapshot support
-  volume_snapshots:
-    enabled: true
-    # CSI driver for Longhorn
-    csi_driver: "driver.longhorn.io"
-
+      # Local mount path for etcd backups
+      local_path: "/mnt/nas-etcd-backups"
+      # Storage size allocation for etcd backups
+      size: "50Gi"
+    
+    # SFTP storage option
+    sftp:
+      enabled: false
+      server: "your-sftp-server.com"
+      port: "22"
+      username: "backups"
+      password: "{{ vault_sftp_password | default('') }}"
+      # Private key authentication (alternative to password)
+      private_key: "{{ vault_sftp_private_key | default('') }}"
+      # Remote path for backups
+      remote_path: "/backups/etcd"
+      # Local staging directory
+      local_staging: "/tmp/etcd-backup-staging"
+  
+  # Backup retention policy
+  retention:
+    # Keep this many of the most recent backups (recommended: 20)
+    keep_backups: 20
+  
+  # etcd connection configuration
+  etcd:
+    # etcd endpoints (RKE2 default paths)
+    endpoints: "https://127.0.0.1:2379"
+    # Certificate paths (RKE2 default locations)
+    ca_cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt"
+    cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.crt"
+    key_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.key"
+  
+  # Backup compression (recommended for storage efficiency)
+  compression: true
+  
+  # Encryption for backups (optional)
+  encryption:
+    enabled: false
+    # GPG key ID for encryption
+    gpg_key_id: "{{ vault_backup_gpg_key | default('') }}"
+  
   # Monitoring and alerting
   monitoring:
     enabled: true
-    # Create ServiceMonitor for Prometheus
-    service_monitor: true
     # Send alerts on backup failures
     alerting: true
 
+# Deploy etcd backup CronJob
+deploy_etcd_backup: "{{ etcd_backup.enabled }}"
 
 # Server configuration
 perform_full_upgrade: true

@@ -1,0 +1,423 @@
+---
+- name: Create etcd-backup namespace
+  kubernetes.core.k8s:
+    name: etcd-backup
+    api_version: v1
+    kind: Namespace
+    state: present
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup storage credentials secret
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: etcd-backup-storage-credentials
+        namespace: etcd-backup
+      type: Opaque
+      data:
+        aws-access-key: "{{ (etcd_backup.storage.aws_s3.access_key | default('')) | b64encode }}"
+        aws-secret-key: "{{ (etcd_backup.storage.aws_s3.secret_key | default('')) | b64encode }}"
+        b2-access-key: "{{ (etcd_backup.storage.backblaze_b2.access_key | default('')) | b64encode }}"
+        b2-secret-key: "{{ (etcd_backup.storage.backblaze_b2.secret_key | default('')) | b64encode }}"
+        sftp-password: "{{ (etcd_backup.storage.sftp.password | default('')) | b64encode }}"
+        sftp-private-key: "{{ (etcd_backup.storage.sftp.private_key | default('')) | b64encode }}"
+  when: etcd_backup.storage.aws_s3.enabled or etcd_backup.storage.backblaze_b2.enabled or etcd_backup.storage.sftp.enabled
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create NFS PersistentVolume for etcd backups
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: etcd-backup-nfs-pv
+      spec:
+        capacity:
+          storage: "{{ etcd_backup.storage.local_nas.size }}"
+        accessModes:
+          - ReadWriteMany
+        persistentVolumeReclaimPolicy: Retain
+        nfs:
+          server: "{{ etcd_backup.storage.local_nas.nfs.server }}"
+          path: "{{ etcd_backup.storage.local_nas.nfs.path }}"
+        mountOptions:
+          - "{{ etcd_backup.storage.local_nas.nfs.mount_options }}"
+  when: etcd_backup.storage.local_nas.enabled | default(false)
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create NFS PersistentVolumeClaim for etcd backups
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: etcd-backup-nfs-pvc
+        namespace: etcd-backup
+      spec:
+        accessModes:
+          - ReadWriteMany
+        resources:
+          requests:
+            storage: "{{ etcd_backup.storage.local_nas.size }}"
+        volumeName: etcd-backup-nfs-pv
+  when: etcd_backup.storage.local_nas.enabled | default(false)
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup ServiceAccount
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: etcd-backup
+        namespace: etcd-backup
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup ClusterRole
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: etcd-backup
+      rules:
+        - apiGroups: [""]
+          resources: ["nodes", "pods", "pods/exec"]
+          verbs: ["get", "list", "create"]
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup ClusterRoleBinding
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: etcd-backup
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: etcd-backup
+      subjects:
+        - kind: ServiceAccount
+          name: etcd-backup
+          namespace: etcd-backup
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup script ConfigMap
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: etcd-backup-script
+        namespace: etcd-backup
+      data:
+        backup.sh: |
+          #!/bin/sh
+          set -euo pipefail
+
+          # Configuration
+          BACKUP_DIR="/tmp/etcd-backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="etcd-backup-${TIMESTAMP}.db"
+          BACKUP_PATH="${BACKUP_DIR}/${BACKUP_FILE}"
+          
+          # etcd configuration
+          ETCD_ENDPOINTS="{{ etcd_backup.etcd.endpoints }}"
+          ETCD_CACERT="{{ etcd_backup.etcd.ca_cert_path }}"
+          ETCD_CERT="{{ etcd_backup.etcd.cert_path }}"
+          ETCD_KEY="{{ etcd_backup.etcd.key_path }}"
+
+          echo "Starting etcd backup at $(date)"
+          echo "Backup file: ${BACKUP_PATH}"
+
+          # Install required packages
+          apk add --no-cache curl tar gzip aws-cli
+
+          # Install etcdctl if not present
+          if ! command -v etcdctl >/dev/null 2>&1; then
+              echo "Installing etcdctl..."
+              cd /tmp
+              curl -L https://github.com/etcd-io/etcd/releases/download/v3.5.9/etcd-v3.5.9-linux-amd64.tar.gz -o etcd.tar.gz
+              tar xzf etcd.tar.gz
+              cp etcd-v3.5.9-linux-amd64/etcdctl /usr/local/bin/
+              rm -rf etcd-v3.5.9-linux-amd64 etcd.tar.gz
+              chmod +x /usr/local/bin/etcdctl
+          fi
+
+          # Create backup directory if it doesn't exist
+          mkdir -p "${BACKUP_DIR}"
+
+          # Create etcd snapshot
+          ETCDCTL_API=3 etcdctl snapshot save "${BACKUP_PATH}" \
+            --endpoints="${ETCD_ENDPOINTS}" \
+            --cacert="${ETCD_CACERT}" \
+            --cert="${ETCD_CERT}" \
+            --key="${ETCD_KEY}"
+
+          # Verify the snapshot
+          ETCDCTL_API=3 etcdctl snapshot status "${BACKUP_PATH}" \
+            --write-out=table
+
+          echo "etcd backup completed successfully"
+
+          # Compress the backup
+          echo "Compressing backup..."
+          gzip "${BACKUP_PATH}"
+          BACKUP_PATH="${BACKUP_PATH}.gz"
+          echo "Compression completed: ${BACKUP_PATH}"
+
+          # Upload to external storage backends
+          if [[ -n "${AWS_ACCESS_KEY:-}" ]]; then
+            echo "Uploading to AWS S3..."
+            AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
+            AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
+            aws s3 cp "${BACKUP_PATH}" \
+              "s3://{{ etcd_backup.storage.aws_s3.bucket | default('') }}/$(basename ${BACKUP_PATH})" \
+              --region="{{ etcd_backup.storage.aws_s3.region | default('us-west-2') }}"
+            echo "Upload to AWS S3 completed"
+          fi
+
+          if [[ -n "${B2_ACCESS_KEY:-}" ]]; then
+            echo "Uploading to Backblaze B2..."
+            AWS_ACCESS_KEY_ID="${B2_ACCESS_KEY}" \
+            AWS_SECRET_ACCESS_KEY="${B2_SECRET_KEY}" \
+            aws s3 cp "${BACKUP_PATH}" \
+              "s3://{{ etcd_backup.storage.backblaze_b2.bucket | default('') }}/$(basename ${BACKUP_PATH})" \
+              --endpoint-url="{{ etcd_backup.storage.backblaze_b2.endpoint | default('') }}" \
+              --region="{{ etcd_backup.storage.backblaze_b2.region | default('us-west-000') }}"
+            echo "Upload to Backblaze B2 completed"
+          fi
+
+          if [[ -n "${SFTP_PASSWORD:-}${SFTP_PRIVATE_KEY:-}" ]]; then
+            echo "Uploading to SFTP..."
+            # Install sshpass if using password
+            if [[ -n "${SFTP_PASSWORD:-}" ]]; then
+                apk add --no-cache sshpass || yum install -y sshpass || apt-get update && apt-get install -y sshpass
+            fi
+            
+            # Create staging directory and copy backup
+            mkdir -p {{ etcd_backup.storage.sftp.local_staging | default('/tmp/sftp-staging') }}
+            cp "${BACKUP_PATH}" "{{ etcd_backup.storage.sftp.local_staging | default('/tmp/sftp-staging') }}/"
+            
+            # Upload via SFTP
+            if [[ -n "${SFTP_PRIVATE_KEY:-}" ]]; then
+              echo "${SFTP_PRIVATE_KEY}" > /tmp/sftp_key
+              chmod 600 /tmp/sftp_key
+              sftp -o StrictHostKeyChecking=no -i /tmp/sftp_key \
+                -P {{ etcd_backup.storage.sftp.port | default('22') }} \
+                {{ etcd_backup.storage.sftp.username | default('backups') }}@{{ etcd_backup.storage.sftp.server | default('') }} << 'SFTP_EOF'
+          put {{ etcd_backup.storage.sftp.local_staging | default('/tmp/sftp-staging') }}/$(basename ${BACKUP_PATH}) {{ etcd_backup.storage.sftp.remote_path | default('/backups/etcd') }}/$(basename ${BACKUP_PATH})
+          quit
+          SFTP_EOF
+              rm -f /tmp/sftp_key
+            else
+              sshpass -p "${SFTP_PASSWORD}" sftp -o StrictHostKeyChecking=no \
+                -P {{ etcd_backup.storage.sftp.port | default('22') }} \
+                {{ etcd_backup.storage.sftp.username | default('backups') }}@{{ etcd_backup.storage.sftp.server | default('') }} << 'SFTP_EOF'
+          put {{ etcd_backup.storage.sftp.local_staging | default('/tmp/sftp-staging') }}/$(basename ${BACKUP_PATH}) {{ etcd_backup.storage.sftp.remote_path | default('/backups/etcd') }}/$(basename ${BACKUP_PATH})
+          quit
+          SFTP_EOF
+            fi
+            
+            # Cleanup staging
+            rm -f "{{ etcd_backup.storage.sftp.local_staging | default('/tmp/sftp-staging') }}/$(basename ${BACKUP_PATH})"
+            echo "Upload to SFTP completed"
+          fi
+
+          # Automated cleanup - keep only last 20 backups
+          echo "Starting automated backup cleanup (keeping last 20)..."
+          
+          # Local NAS cleanup - keep last 20 backups
+          if [[ -d "${BACKUP_DIR}" ]]; then
+            echo "Cleaning up local NAS backups..."
+            cd "${BACKUP_DIR}"
+            ls -t etcd-backup-*.gz 2>/dev/null | tail -n +21 | xargs -r rm -f
+            REMAINING_LOCAL=$(ls -1 etcd-backup-*.gz 2>/dev/null | wc -l)
+            echo "Local cleanup completed. Remaining backups: ${REMAINING_LOCAL}"
+          fi
+
+          # AWS S3 cleanup - keep last 20 backups
+          if [[ -n "${AWS_ACCESS_KEY:-}" ]]; then
+            echo "Cleaning up AWS S3 backups..."
+            AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
+            AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
+            aws s3api list-objects-v2 \
+              --bucket "{{ etcd_backup.storage.aws_s3.bucket | default('') }}" \
+              --prefix "etcd-backup-" \
+              --query "sort_by(Contents, &LastModified)[:-20].Key" \
+              --output text | \
+            while read -r key; do
+              if [[ -n "${key}" && "${key}" != "None" ]]; then
+                echo "Deleting old S3 backup: ${key}"
+                AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
+                AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
+                aws s3 rm "s3://{{ etcd_backup.storage.aws_s3.bucket | default('') }}/${key}" \
+                  --region="{{ etcd_backup.storage.aws_s3.region | default('us-west-2') }}" || true
+              fi
+            done
+          fi
+
+          # Backblaze B2 cleanup - keep last 20 backups
+          if [[ -n "${B2_ACCESS_KEY:-}" ]]; then
+            echo "Cleaning up Backblaze B2 backups..."
+            AWS_ACCESS_KEY_ID="${B2_ACCESS_KEY}" \
+            AWS_SECRET_ACCESS_KEY="${B2_SECRET_KEY}" \
+            aws s3api list-objects-v2 \
+              --bucket "{{ etcd_backup.storage.backblaze_b2.bucket | default('') }}" \
+              --endpoint-url="{{ etcd_backup.storage.backblaze_b2.endpoint | default('') }}" \
+              --prefix "etcd-backup-" \
+              --query "sort_by(Contents, &LastModified)[:-20].Key" \
+              --output text | \
+            while read -r key; do
+              if [[ -n "${key}" && "${key}" != "None" ]]; then
+                echo "Deleting old B2 backup: ${key}"
+                AWS_ACCESS_KEY_ID="${B2_ACCESS_KEY}" \
+                AWS_SECRET_ACCESS_KEY="${B2_SECRET_KEY}" \
+                aws s3 rm "s3://{{ etcd_backup.storage.backblaze_b2.bucket | default('') }}/${key}" \
+                  --endpoint-url="{{ etcd_backup.storage.backblaze_b2.endpoint | default('') }}" || true
+              fi
+            done
+          fi
+
+          echo "Automated cleanup completed at $(date)"
+          echo "etcd backup process completed at $(date)"
+  tags:
+    - infra
+    - infra:etcd-backup
+
+- name: Create etcd backup CronJob
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: etcd-backup
+        namespace: etcd-backup
+        labels:
+          app: etcd-backup
+      spec:
+        schedule: "{{ etcd_backup.schedule }}"
+        concurrencyPolicy: Forbid
+        successfulJobsHistoryLimit: 3
+        failedJobsHistoryLimit: 3
+        jobTemplate:
+          spec:
+            template:
+              metadata:
+                labels:
+                  app: etcd-backup-job
+              spec:
+                serviceAccountName: etcd-backup
+                restartPolicy: OnFailure
+                nodeSelector:
+                  node-role.kubernetes.io/control-plane: "true"
+                tolerations:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+                    effect: NoSchedule
+                hostNetwork: true
+                hostPID: true
+                containers:
+                  - name: etcd-backup
+                    image: alpine:3.18
+                    command: ["/bin/sh", "/scripts/backup.sh"]
+                    env:
+                      - name: AWS_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: aws-access-key
+                            optional: true
+                      - name: AWS_SECRET_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: aws-secret-key
+                            optional: true
+                      - name: B2_ACCESS_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: b2-access-key
+                            optional: true
+                      - name: B2_SECRET_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: b2-secret-key
+                            optional: true
+                      - name: SFTP_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: sftp-password
+                            optional: true
+                      - name: SFTP_PRIVATE_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: etcd-backup-storage-credentials
+                            key: sftp-private-key
+                            optional: true
+                    volumeMounts:
+                      - name: backup-script
+                        mountPath: /scripts
+                      - name: etcd-certs
+                        mountPath: /var/lib/rancher/rke2/server/tls/etcd
+                        readOnly: true
+                      - name: sftp-staging
+                        mountPath: /tmp/sftp-staging
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+                volumes:
+                  - name: backup-script
+                    configMap:
+                      name: etcd-backup-script
+                      defaultMode: 493
+                  - name: etcd-certs
+                    hostPath:
+                      path: /var/lib/rancher/rke2/server/tls/etcd
+                      type: Directory
+                  - name: sftp-staging
+                    emptyDir: {}
+  when: etcd_backup.enabled
+  tags:
+    - infra
+    - infra:etcd-backup
+
+# Cleanup is now integrated into the main backup script
+
+- name: Import etcd backup monitoring tasks
+  ansible.builtin.include_tasks: etcd_backup_monitoring.yml
+  tags:
+    - infra
+    - infra:etcd-backup
+    - infra:monitoring
+
+- name: Import etcd backup restore tasks
+  ansible.builtin.include_tasks: etcd_backup_restore.yml
+  tags:
+    - infra
+    - infra:etcd-backup
+

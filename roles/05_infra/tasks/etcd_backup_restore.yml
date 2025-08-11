@@ -1,0 +1,152 @@
+---
+- name: Create etcd restore ConfigMap
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: etcd-restore-script
+        namespace: etcd-backup
+      data:
+        restore.sh: |
+          #!/bin/bash
+          set -euo pipefail
+
+          # Usage: restore.sh <backup-file> [restore-data-dir]
+
+          BACKUP_FILE="${1:-}"
+          RESTORE_DATA_DIR="${2:-/var/lib/rancher/rke2/server/db/etcd-restore}"
+
+          if [[ -z "${BACKUP_FILE}" ]]; then
+            echo "Usage: $0 <backup-file> [restore-data-dir]"
+            echo "Example: $0 /backups/etcd-backup-20241201_030000.db.gz"
+            exit 1
+          fi
+
+          if [[ ! -f "${BACKUP_FILE}" ]]; then
+            echo "Error: Backup file ${BACKUP_FILE} not found"
+            exit 1
+          fi
+
+          echo "Starting etcd restore process at $(date)"
+          echo "Backup file: ${BACKUP_FILE}"
+          echo "Restore directory: ${RESTORE_DATA_DIR}"
+
+          # Create restore directory
+          mkdir -p "${RESTORE_DATA_DIR}"
+
+          # Decrypt if needed
+          WORKING_FILE="${BACKUP_FILE}"
+          {% if etcd_backup.encryption.enabled %}
+          if [[ "${BACKUP_FILE}" == *.gpg ]]; then
+            echo "Decrypting backup file..."
+            WORKING_FILE="/tmp/$(basename ${BACKUP_FILE%.gpg})"
+            gpg --decrypt "${BACKUP_FILE}" > "${WORKING_FILE}"
+          fi
+          {% endif %}
+
+          # Decompress if needed
+          if [[ "${WORKING_FILE}" == *.gz ]]; then
+            echo "Decompressing backup file..."
+            FINAL_FILE="/tmp/$(basename ${WORKING_FILE%.gz})"
+            gunzip -c "${WORKING_FILE}" > "${FINAL_FILE}"
+            WORKING_FILE="${FINAL_FILE}"
+          fi
+
+          # Verify snapshot before restore
+          echo "Verifying snapshot integrity..."
+          ETCDCTL_API=3 etcdctl snapshot status "${WORKING_FILE}" --write-out=table
+
+          # Perform the restore
+          echo "Restoring etcd snapshot..."
+          ETCDCTL_API=3 etcdctl snapshot restore "${WORKING_FILE}" \
+            --data-dir="${RESTORE_DATA_DIR}" \
+            --name="restored-member" \
+            --initial-cluster="restored-member=https://127.0.0.1:2380" \
+            --initial-advertise-peer-urls="https://127.0.0.1:2380"
+
+          echo "etcd restore completed successfully at $(date)"
+          echo "Restored data is available at: ${RESTORE_DATA_DIR}"
+          echo ""
+          echo "IMPORTANT: To complete the restore process:"
+          echo "1. Stop all RKE2 services: systemctl stop rke2-server"
+          echo "2. Backup current etcd data: mv /var/lib/rancher/rke2/server/db/etcd /var/lib/rancher/rke2/server/db/etcd.backup"
+          echo "3. Move restored data: mv ${RESTORE_DATA_DIR} /var/lib/rancher/rke2/server/db/etcd"
+          echo "4. Start RKE2 services: systemctl start rke2-server"
+
+        download-backup.sh: |
+          #!/bin/bash
+          set -euo pipefail
+
+          # Usage: download-backup.sh <backup-filename> <storage-type>
+
+          BACKUP_FILENAME="${1:-}"
+          STORAGE_TYPE="${2:-s3}"
+
+          if [[ -z "${BACKUP_FILENAME}" ]]; then
+            echo "Usage: $0 <backup-filename> [storage-type]"
+            echo "Example: $0 etcd-backup-20241201_030000.db.gz s3"
+            echo "Storage types: s3, b2, sftp"
+            exit 1
+          fi
+
+          DOWNLOAD_DIR="/tmp/etcd-restore"
+          mkdir -p "${DOWNLOAD_DIR}"
+
+          case "${STORAGE_TYPE}" in
+            "s3")
+              {% if etcd_backup.storage.aws_s3.enabled %}
+              echo "Downloading from AWS S3..."
+              AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY}" \
+              AWS_SECRET_ACCESS_KEY="${AWS_SECRET_KEY}" \
+              aws s3 cp "s3://{{ etcd_backup.storage.aws_s3.bucket }}/${BACKUP_FILENAME}" \
+                "${DOWNLOAD_DIR}/${BACKUP_FILENAME}" \
+                --region="{{ etcd_backup.storage.aws_s3.region }}"
+              {% endif %}
+              ;;
+            "b2")
+              {% if etcd_backup.storage.backblaze_b2.enabled %}
+              echo "Downloading from Backblaze B2..."
+              AWS_ACCESS_KEY_ID="${B2_ACCESS_KEY}" \
+              AWS_SECRET_ACCESS_KEY="${B2_SECRET_KEY}" \
+              aws s3 cp "s3://{{ etcd_backup.storage.backblaze_b2.bucket }}/${BACKUP_FILENAME}" \
+                "${DOWNLOAD_DIR}/${BACKUP_FILENAME}" \
+                --endpoint-url="{{ etcd_backup.storage.backblaze_b2.endpoint }}" \
+                --region="{{ etcd_backup.storage.backblaze_b2.region }}"
+              {% endif %}
+              ;;
+            "sftp")
+              {% if etcd_backup.storage.sftp.enabled %}
+              echo "Downloading from SFTP..."
+              if [[ -n "${SFTP_PRIVATE_KEY:-}" ]]; then
+                echo "${SFTP_PRIVATE_KEY}" > /tmp/sftp_key
+                chmod 600 /tmp/sftp_key
+                sftp -o StrictHostKeyChecking=no -i /tmp/sftp_key \
+                  -P {{ etcd_backup.storage.sftp.port }} \
+                  {{ etcd_backup.storage.sftp.username }}@{{ etcd_backup.storage.sftp.server }} << EOF
+              get {{ etcd_backup.storage.sftp.remote_path }}/${BACKUP_FILENAME} ${DOWNLOAD_DIR}/${BACKUP_FILENAME}
+              quit
+              EOF
+                rm -f /tmp/sftp_key
+              else
+                sshpass -p "${SFTP_PASSWORD}" sftp -o StrictHostKeyChecking=no \
+                  -P {{ etcd_backup.storage.sftp.port }} \
+                  {{ etcd_backup.storage.sftp.username }}@{{ etcd_backup.storage.sftp.server }} << EOF
+              get {{ etcd_backup.storage.sftp.remote_path }}/${BACKUP_FILENAME} ${DOWNLOAD_DIR}/${BACKUP_FILENAME}
+              quit
+              EOF
+              fi
+              {% endif %}
+              ;;
+            *)
+              echo "Unknown storage type: ${STORAGE_TYPE}"
+              echo "Available types: s3, b2, sftp"
+              exit 1
+              ;;
+          esac
+
+          echo "Download completed: ${DOWNLOAD_DIR}/${BACKUP_FILENAME}"
+  when: etcd_backup.enabled
+  tags:
+    - infra
+    - infra:etcd-backup

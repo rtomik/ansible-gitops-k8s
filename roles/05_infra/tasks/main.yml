@@ -88,3 +88,10 @@
     - infra:externalstorage
     - infra:storage
     - infra:nas
+
+- import_tasks: etcd_backup.yml
+  when: deploy_etcd_backup | default(false)
+  tags:
+    - infra
+    - infra:etcd-backup
+    - infra:backup

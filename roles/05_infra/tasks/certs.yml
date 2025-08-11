@@ -52,7 +52,7 @@
     release_namespace: cert-manager
     wait: true
     wait_timeout: 3m
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Add cloudflare api token to secret
   kubernetes.core.k8s:
@@ -64,8 +64,8 @@
         namespace: cert-manager
       type: Opaque
       data:
-        api-token: "{{ cloudflare_api_token | b64encode }}"
-  when: enable_cloudflare | bool
+        api-token: "{{ cloudflare.api_token | b64encode }}"
+  when: cloudflare.enabled | bool
 
 - name: Check if ClusterIssuer exists
   kubernetes.core.k8s_info:
@@ -74,7 +74,7 @@
     name: cloudflare-issuer
   register: issuer_check
   ignore_errors: true
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Create issuer
   kubernetes.core.k8s:
@@ -99,7 +99,7 @@
                 dnsZones:
                   - "{{ domain }}"
   when:
-    - enable_cloudflare | bool
+    - cloudflare.enabled | bool
     - issuer_check.resources | length == 0
 
 - name: Wait for ClusterIssuer to be ready
@@ -115,7 +115,7 @@
     - issuer_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
   retries: 5
   delay: 30
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Check if Certificate exists
   kubernetes.core.k8s_info:
@@ -125,7 +125,7 @@
     namespace: cert-manager
   register: certificate_check
   ignore_errors: true
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Create certificate
   kubernetes.core.k8s:
@@ -136,7 +136,7 @@
         name: wildcard-{{ domain }}
         namespace: cert-manager
       spec:
-        secretName: "{{ tls_secret_name }}"
+        secretName: "{{ cloudflare.tls_secret_name }}"
         issuerRef:
           name: cloudflare-issuer
           kind: ClusterIssuer
@@ -151,7 +151,7 @@
             reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
             reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "traefik,gitlab"
   when:
-    - enable_cloudflare | bool
+    - cloudflare.enabled | bool
     - certificate_check.resources | length == 0
 
 - name: Wait for certificate to be ready
@@ -168,13 +168,13 @@
     - cert_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
   retries: 15
   delay: 30
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Verify TLS secret exists and is populated
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Secret
-    name: "{{ tls_secret_name }}"
+    name: "{{ cloudflare.tls_secret_name }}"
     namespace: cert-manager
   register: tls_secret
   until:
@@ -184,9 +184,9 @@
     - tls_secret.resources[0].data['tls.key'] is defined
   retries: 5
   delay: 10
-  when: enable_cloudflare | bool
+  when: cloudflare.enabled | bool
 
 - name: Log certificate deployment success
   ansible.builtin.debug:
-    msg: "Certificate successfully deployed and ready for use. TLS secret: {{ tls_secret_name }}"
-  when: enable_cloudflare | bool
+    msg: "Certificate successfully deployed and ready for use. TLS secret: {{ cloudflare.tls_secret_name }}"
+  when: cloudflare.enabled | bool
