@@ -133,6 +133,21 @@ app_definitions:
     version: "{{ n8n_version }}"
     repo: "https://community-charts.github.io/helm-charts"
     namespace: "n8n"
+  cnpg:
+    enabled: "{{ deploy_cnpg }}"
+    chart_name: "cloudnative-pg"
+    version: "{{ cnpg_version }}"
+    repo: "https://cloudnative-pg.github.io/charts"
+    namespace: "cnpg-system"
+    server_side: "true"
+  pg-clusters:
+    enabled: "{{ deploy_cnpg }}"
+    chart_name: ""
+    version: ""
+    repo: ""
+    namespace: "dbs"
+    path: "pg-clusters"
+    source_type: "directory"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |
@@ -142,6 +157,7 @@ enabled_apps: "{{ app_definitions | dict2items |
 # Generate base directories
 base_directories:
   - argocd-apps
+  - pg-clusters
 
 # Generate app directories dynamically
 app_directories: "{{ enabled_apps | map(attribute='key') |
