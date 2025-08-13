@@ -50,9 +50,9 @@ jellyfin:
       storageClass: longhorn
       accessMode: ReadWriteOnce
       size: 1Gi
-{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %} 
+{% if external_storage.enabled and external_storage.applications.qbittorrent.enabled %} 
     media:
       enabled: true
       type: pvc
-      existingClaim: qbittorrent-data
+      existingClaim: "{{ external_storage.applications.qbittorrent.pvc_name }}"
 {% endif %}

@@ -55,6 +55,15 @@
       environment:
         GIT_SSL_NO_VERIFY: "true"
         GIT_TERMINAL_PROMPT: "0"
+        # Add git configuration to handle network issues
+        GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+        GIT_HTTP_LOW_SPEED_TIME: "300"
+        GIT_HTTP_POST_BUFFER: "524288000"
+        GIT_CURL_VERBOSE: "1"
+      retries: 3
+      delay: 5
+      register: git_clone_result
+      until: git_clone_result is succeeded
 
     - name: Create directory structure
       ansible.builtin.file:
@@ -97,6 +106,9 @@
           spec:
             description: "Main PostgreSQL Cluster - managed by GitOps"
             instances: {{ postgresql.instances }}
+          {% if postgresql.image_name is defined %}
+            imageName: "{{ postgresql.image_name }}"
+          {% endif %}
 
             postgresql:
               parameters:
@@ -104,6 +116,10 @@
                 shared_buffers: "{{ postgresql.config.shared_buffers }}"
                 effective_cache_size: "{{ postgresql.config.effective_cache_size }}"
                 maintenance_work_mem: "{{ postgresql.config.maintenance_work_mem }}"
+          {% if postgresql.image_name is defined %}
+                # Enable pgvecto.rs extension
+                shared_preload_libraries: "vectors.so"
+          {% endif %}
 
             bootstrap:
               initdb:
@@ -111,6 +127,11 @@
                 owner: {{ postgresql.app_user }}
                 secret:
                   name: {{ postgresql.cluster_name }}-app
+          {% if postgresql.image_name is defined %}
+                postInitSQL:
+                  - "ALTER SYSTEM SET search_path TO \"$user\", public, vectors;"
+                  - "SELECT pg_reload_conf();"
+          {% endif %}
 
             superuserSecret:
               name: {{ postgresql.cluster_name }}-superuser
@@ -208,6 +229,33 @@
       loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
       when: deploy_cnpg | bool and postgresql.enabled | bool and postgresql.databases is defined
 
+    - name: Create database credentials secrets in application namespaces
+      ansible.builtin.copy:
+        dest: "{{ git_temp_dir.path }}/pg-clusters/app-secret-{{ item.key }}.yaml"
+        content: |
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: {{ item.key }}-db-credentials
+            namespace: {{ item.value.app_namespace | default(item.key) }}
+            labels:
+              app: {{ item.key }}
+              component: database
+              copied-from: {{ postgresql.namespace }}
+          type: kubernetes.io/basic-auth
+          data:
+            username: {{ item.value.username | b64encode }}
+            password: {{ item.value.password | b64encode }}
+            database: {{ item.value.database_name | b64encode }}
+            # Connection strings for applications
+            connection_string: {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' + postgresql.cluster_name + '-pooler.' + postgresql.namespace + '.svc.cluster.local:5432/' + item.value.database_name) | b64encode }}
+            connection_string_rw: {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' + postgresql.cluster_name + '-rw.' + postgresql.namespace + '.svc.cluster.local:5432/' + item.value.database_name) | b64encode }}
+            connection_string_ro: {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' + postgresql.cluster_name + '-ro.' + postgresql.namespace + '.svc.cluster.local:5432/' + item.value.database_name) | b64encode }}
+        mode: '0644'
+      loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
+      when: deploy_cnpg | bool and postgresql.enabled | bool and postgresql.databases is defined
+
     - name: Create database initialization job
       ansible.builtin.copy:
         dest: "{{ git_temp_dir.path }}/pg-clusters/database-init-job.yaml"
@@ -270,7 +318,7 @@
             {% if db_config.extensions %}
                     # Install extensions for {{ db_config.database_name }}
             {% for extension in db_config.extensions %}
-                    kubectl exec $PRIMARY_POD -n {{ postgresql.namespace }} -- psql -U postgres -d {{ db_config.database_name }} -c "CREATE EXTENSION IF NOT EXISTS \"{{ extension }}\";"
+                    kubectl exec $PRIMARY_POD -n {{ postgresql.namespace }} -- psql -U postgres -d {{ db_config.database_name }} -c "CREATE EXTENSION IF NOT EXISTS \\\"{{ extension }}\\\";"
             {% endfor %}
             {% endif %}
                     
@@ -503,6 +551,9 @@
         cd {{ git_temp_dir.path }}
         git config user.email "ansible@{{ domain }}"
         git config user.name "Ansible Automation"
+        git config http.postBuffer 524288000
+        git config http.lowSpeedLimit 1000
+        git config http.lowSpeedTime 300
         git add .
         git diff --cached --quiet || git commit -m "Deploy enabled apps: {{ enabled_apps | map(attribute='key') | join(', ') }}"
         git push
@@ -510,7 +561,13 @@
         GIT_TERMINAL_PROMPT: 0
         GIT_USERNAME: "admin"
         GIT_PASSWORD: "{{ gitea_api_token }}"
+        GIT_HTTP_LOW_SPEED_LIMIT: "1000"
+        GIT_HTTP_LOW_SPEED_TIME: "300"
+        GIT_HTTP_POST_BUFFER: "524288000"
       register: git_push
+      retries: 3
+      delay: 5
+      until: git_push is succeeded or "No changes to commit" in git_push.stdout
       failed_when: git_push.rc != 0 and "No changes to commit" not in git_push.stdout
 
     - name: Apply ArgoCD applications

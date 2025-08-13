@@ -21,7 +21,7 @@ ingressRoute:
 tlsStore:
   default:
     defaultCertificate:
-      secretName: "{{ tls_secret_name }}"
+      secretName: "{{ cloudflare.tls_secret_name }}"
 
 affinity:
   podAntiAffinity:

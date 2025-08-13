@@ -19,7 +19,7 @@ global:
       traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
     tls:
       enabled: true
-      secretName: "{{ tls_secret_name }}"
+      secretName: "{{ cloudflare.tls_secret_name }}"
   edition: ce
   
   # appConfig:
@@ -52,7 +52,7 @@ gitlab:
       enabled: true
       tls:
         enabled: true
-        secretName: "{{ tls_secret_name }}"
+        secretName: "{{ cloudflare.tls_secret_name }}"
     resources:
       limits:
         memory: 2Gi

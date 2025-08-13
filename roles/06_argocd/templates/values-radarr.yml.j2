@@ -24,11 +24,11 @@ radarr:
     accessMode: ReadWriteOnce
     size: 2Gi
   
-{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %}
+{% if external_storage.enabled and external_storage.applications.qbittorrent.enabled %}
     additionalVolumes:
       - name: downloads
         persistentVolumeClaim:
-          claimName: qbittorrent-data
+          claimName: "{{ external_storage.applications.qbittorrent.pvc_name }}"
     
     additionalMounts:
       - name: downloads

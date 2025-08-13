@@ -29,7 +29,7 @@ qbittorrent-vpn:
         value: "0"
           
     securityContext: null   
-{% if lookup('k8s', kind='PersistentVolumeClaim', namespace='arr', resource_name='qbittorrent-data') %}
+{% if external_storage.enabled and external_storage.applications.qbittorrent.enabled %}
     persistence:
       config:
         enabled: true
@@ -40,7 +40,7 @@ qbittorrent-vpn:
       
       downloads:
         enabled: true
-        existingClaim: "qbittorrent-data"
+        existingClaim: "{{ external_storage.applications.qbittorrent.pvc_name }}"
         mountPath: /downloads
 {% else %}
     # Fall back to default storage configuration

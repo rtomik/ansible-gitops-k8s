@@ -148,6 +148,12 @@ app_definitions:
     namespace: "dbs"
     path: "pg-clusters"
     source_type: "directory"
+  immich:
+    enabled: "{{ deploy_immich }}"
+    chart_name: "immich"
+    version: "{{ immich_version }}"
+    repo: "https://immich-app.github.io/immich-charts"
+    namespace: "immich"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |
