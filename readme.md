@@ -133,7 +133,7 @@ Some apps needs to be configured manually
 
 #### Jellyfin
 
-   - Follow this guide [Authentik docs](https://docs.goauthentik.io/integrations/services/jellyfin/#oidc-configuration)   
+   - Follow this guide [Authentik docs](https://integrations.goauthentik.io/media/jellyfin/)   
    - In plugin settings add Roles: 
       ```
       user

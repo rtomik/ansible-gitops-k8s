@@ -32,6 +32,7 @@
         - { name: 'gitea_repmgr_password', length: 15 }
         - { name: 'gitea_pgpool_password', length: 15 }
         - { name: 'gitea_admin_password', length: 15 }
+        - { name: 'karakeep_nextauth', length: 15 }
       register: generated_tokens
       changed_when: false
 
@@ -44,11 +45,12 @@
           vault_authentik_postgresql_password: "{{ generated_tokens.results[2].stdout }}"
           vault_authentik_user_password: "{{ generated_tokens.results[3].stdout }}"
           vault_authentik_api_token: "{{ generated_tokens.results[4].stdout }}"
-          vault_paperless_pg_pw: "{{ generated_tokens.results[4].stdout }}"
-          vault_gitea_postgresql_password: "{{ generated_tokens.results[5].stdout }}"
-          vault_gitea_repmgr_password: "{{ generated_tokens.results[6].stdout }}"
-          vault_gitea_pgpool_password: "{{ generated_tokens.results[7].stdout }}"
-          vault_gitea_admin_password: "{{ generated_tokens.results[7].stdout }}"
+          vault_paperless_pg_pw: "{{ generated_tokens.results[5].stdout }}"
+          vault_gitea_postgresql_password: "{{ generated_tokens.results[6].stdout }}"
+          vault_gitea_repmgr_password: "{{ generated_tokens.results[7].stdout }}"
+          vault_gitea_pgpool_password: "{{ generated_tokens.results[8].stdout }}"
+          vault_gitea_admin_password: "{{ generated_tokens.results[9].stdout }}"
+          vault_karakeep_nextauth: "{{ generated_tokens.results[10].stdout }}"
 
     # Write unencrypted vault file
     - name: Create temporary unencrypted vault file

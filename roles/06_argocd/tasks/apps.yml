@@ -116,10 +116,6 @@
                 shared_buffers: "{{ postgresql.config.shared_buffers }}"
                 effective_cache_size: "{{ postgresql.config.effective_cache_size }}"
                 maintenance_work_mem: "{{ postgresql.config.maintenance_work_mem }}"
-          {% if postgresql.image_name is defined %}
-                # Enable pgvecto.rs extension
-                shared_preload_libraries: "vectors.so"
-          {% endif %}
 
             bootstrap:
               initdb:
@@ -127,11 +123,6 @@
                 owner: {{ postgresql.app_user }}
                 secret:
                   name: {{ postgresql.cluster_name }}-app
-          {% if postgresql.image_name is defined %}
-                postInitSQL:
-                  - "ALTER SYSTEM SET search_path TO \"$user\", public, vectors;"
-                  - "SELECT pg_reload_conf();"
-          {% endif %}
 
             superuserSecret:
               name: {{ postgresql.cluster_name }}-superuser
@@ -315,12 +306,6 @@
                     kubectl exec $PRIMARY_POD -n {{ postgresql.namespace }} -- psql -U postgres -d {{ db_config.database_name }} -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT {{ db_config.privileges }} ON TABLES TO {{ db_config.username }};"
                     kubectl exec $PRIMARY_POD -n {{ postgresql.namespace }} -- psql -U postgres -d {{ db_config.database_name }} -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT {{ db_config.privileges }} ON SEQUENCES TO {{ db_config.username }};"
                     
-            {% if db_config.extensions %}
-                    # Install extensions for {{ db_config.database_name }}
-            {% for extension in db_config.extensions %}
-                    kubectl exec $PRIMARY_POD -n {{ postgresql.namespace }} -- psql -U postgres -d {{ db_config.database_name }} -c "CREATE EXTENSION IF NOT EXISTS \\\"{{ extension }}\\\";"
-            {% endfor %}
-            {% endif %}
                     
                     echo "✅ Database {{ db_config.database_name }} configured for user {{ db_config.username }}"
                     
@@ -392,7 +377,6 @@
           - Database: `{{ db_config.database_name }}`
           - User: `{{ db_config.username }}`
           - Secret: `{{ db_key }}-db-credentials` (in namespace `{{ postgresql.namespace }}`)
-          - Extensions: {{ db_config.extensions | join(', ') if db_config.extensions else 'None' }}
           {% endif %}
           {% endfor %}
           

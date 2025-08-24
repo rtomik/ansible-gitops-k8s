@@ -154,6 +154,12 @@ app_definitions:
     version: "{{ immich_version }}"
     repo: "https://immich-app.github.io/immich-charts"
     namespace: "immich"
+  karakeep:
+    enabled: "{{ deploy_karakeep }}"
+    chart_name: "karakeep"
+    version: "{{ karakeep_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "karakeep"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |

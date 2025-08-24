@@ -47,8 +47,9 @@ tailscale:
 
 # --- External Storage --- #
 
+# --- External Storage --- #
 external_storage:
-  enabled: true
+  enabled: false
   nas:
     # SMB/CIFS Example
     - name: "smb"
@@ -62,26 +63,31 @@ external_storage:
         user: ""
         password: ""
 
+      # NFS specific settings
+      nfs:
+        path: "/volume1/media"
+        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+
       # Storage configuration
       size: "1Ti"
       storage_class: "media-storage"
       reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
       access_mode: "ReadWriteMany"
 
-    # SFTP Example
+    # SFTP Example (Hetzner Storage Box)
     - name: "media"
-      enabled: false
+      enabled: true
       type: "sftp"
-      server: "000000-sub1.your-storagebox.de"  
+      server: "<server>"  # Your storage box hostname
 
       # SFTP specific settings
       ssh:
         port: "23"
       sftp:
-        user: "000000-sub1"  # Your storage box username
+        user: "u0-sub1"  # Your storage box username
         port: "22"
         path: "/media"       # Root path or subdirectory like "/backup"
-        password: ""
+        password: "<password>"
 
         # Optional settings
         image: "alpine:3.18"
@@ -115,11 +121,183 @@ external_storage:
   # Define your applications that need storage
   applications:
     qbittorrent:
-      enabled: true
+      enabled: false
       storage_name: "media"  # Must match one of the 'name' fields above
       namespace: "arr"
       size: "500Gi"
       pvc_name: qbittorrent-data
+
+
+# --- ETCD Backup Configuration --- #
+# Automated etcd database backups for cluster state recovery
+etcd_backup:
+  enabled: false
+
+  # Backup schedule (daily at 3 AM by default)
+  schedule: "0 3 * * *"
+
+  # Storage backends for etcd backups (can enable multiple)
+  storage:
+    # Amazon S3
+    aws_s3:
+      enabled: false
+      bucket: "my-cluster-etcd-backups"
+      region: "us-west-2"
+      # Use IAM roles or store credentials in vault
+      access_key: "{{ vault_aws_access_key | default('') }}"
+      secret_key: "{{ vault_aws_secret_key | default('') }}"
+
+    # Backblaze B2 (S3-compatible)
+    backblaze_b2:
+      enabled: false
+      bucket: ""
+      region: "us-west-000"
+      endpoint: "https://s3.eu-central-003.backblazeb2.com"
+      # Application Key ID and Application Key from Backblaze
+      access_key: ""
+      secret_key: ""
+
+    # Local NAS via NFS
+    local_nas:
+      enabled: false
+      # NFS server configuration
+      nfs:
+        server: "192.168.1.100"
+        path: "/volume1/backups/etcd"
+        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+      # Local mount path for etcd backups
+      local_path: "/mnt/nas-etcd-backups"
+      # Storage size allocation for etcd backups
+      size: "50Gi"
+
+    # SFTP storage option
+    sftp:
+      enabled: false
+      server: "your-sftp-server.com"
+      port: "22"
+      username: "backups"
+      password: "{{ vault_sftp_password | default('') }}"
+      # Private key authentication (alternative to password)
+      private_key: "{{ vault_sftp_private_key | default('') }}"
+      # Remote path for backups
+      remote_path: "/backups/etcd"
+      # Local staging directory
+      local_staging: "/tmp/etcd-backup-staging"
+
+  # Backup retention policy
+  retention:
+    # Keep this many of the most recent backups (recommended: 20)
+    keep_backups: 20
+
+  # etcd connection configuration
+  etcd:
+    # etcd endpoints (RKE2 default paths)
+    endpoints: "https://127.0.0.1:2379"
+    # Certificate paths (RKE2 default locations)
+    ca_cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt"
+    cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.crt"
+    key_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.key"
+
+  # Backup compression (recommended for storage efficiency)
+  compression: true
+
+  # Encryption for backups (optional)
+  encryption:
+    enabled: false
+    # GPG key ID for encryption
+    gpg_key_id: "{{ vault_backup_gpg_key | default('') }}"
+
+  # Monitoring and alerting
+  monitoring:
+    enabled: true
+    # Send alerts on backup failures
+    alerting: true
+
+# Deploy etcd backup CronJob
+deploy_etcd_backup: "{{ etcd_backup.enabled }}"
+
+# --- PostgreSQL Configuration --- #
+# CloudNativePG for centralized PostgreSQL database
+# More info https://cloudnative-pg.io/documentation/preview/quickstart/
+postgresql:
+  enabled: false
+  # Cluster configuration
+  cluster_name: "postgres-cluster"
+  namespace: "dbs"
+  instances: 3  # High availability with 3 instances
+  # Custom image with pgvecto.rs extension for Immich support
+  image_name: "ghcr.io/cloudnative-pg/postgresql:17.5"
+
+  # Database configuration
+  default_database: "postgres"
+  app_user: "app"
+  superuser_password: ""
+  app_password: ""
+
+  # Storage configuration
+  storage:
+    size: "25Gi"
+    storage_class: "longhorn"  # Using Longhorn for persistent storage
+
+  # PostgreSQL configuration parameters
+  config:
+    max_connections: "200"
+    shared_buffers: "256MB"
+    effective_cache_size: "1GB"
+    maintenance_work_mem: "64MB"
+
+  # Backup configuration
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_policy: "30d"  # Keep backups for 30 days
+    external_storage:
+      enabled: false  # Can be configured later for S3/Backblaze
+      bucket: ""
+      secret_name: "postgresql-backup-credentials"
+
+  # Connection pooling configuration
+  pooler:
+    enabled: true
+    instances: 2
+    pool_mode: "transaction"  # Can be: session, transaction, statement
+    max_client_conn: "100"
+    default_pool_size: "20"
+    min_pool_size: "5"
+    reserve_pool_size: "5"
+    server_lifetime: "3600"
+    server_idle_timeout: "600"
+
+  # Application databases - each gets its own database and user
+  databases:
+    immich:
+      enabled: true
+      database_name: "immich"
+      username: "immich_user"
+      password: "{{ vault_immich_db_password | default('placeholder') }}"
+      description: "Immich photo management database"
+      app_namespace: "immich"
+      privileges: "ALL"
+
+    # Example databases (uncomment and configure when needed):
+    # authentik:
+    #   enabled: true
+    #   database_name: "authentik"
+    #   username: "authentik_user"
+    #   password: "{{ vault_authentik_db_password }}"
+    #   description: "Authentik authentication database"
+    #   extensions:
+    #     - "uuid-ossp"
+    #   privileges: "ALL"
+
+    # paperless:
+    #   enabled: true
+    #   database_name: "paperless"
+    #   username: "paperless_user"
+    #   password: "{{ vault_paperless_db_password }}"
+    #   description: "Paperless-NGX document management database"
+    #   extensions: []
+    #   privileges: "ALL"
 
 # --- Apps --- #
 # Define which app to deploy
@@ -135,6 +313,7 @@ deploy_rancher: true
 deploy_authentik: true
 deploy_renovate: true
 deploy_wg_easy: false
+deploy_cnpg: true # central postgresql used for immich
 
 # Apps
 deploy_audiobookshelf: true
@@ -148,6 +327,14 @@ deploy_donetick: true
 deploy_paperless_ngx: true
 deploy_lubelogger: true
 deploy_n8n: true
+deploy_immich: true
+deploy_karakeep: true
+
+# Jellyfin hw acceleration
+# More info https://www.johanneskueber.com/posts/hardware_acceleration_kubernets_jellyfin/
+jellyfin_hw:
+  enabled: true
+  path: /dev/dri
 
 # --- qbittorrent-vpn --- #
 # If you enabled arr
@@ -208,6 +395,7 @@ gitea_version: 11.0.1
 reflector_version: 7.1.288
 renovate_version: 39.251.0
 wg_easy_version: 0.1.2
+cnpg_version: 0.26.0
 
 # Monitoring
 prometheus_stack_version: 70.4.1
@@ -231,97 +419,11 @@ prowlarr_version: 1.41.1
 qbittorrent_vpn_version: 0.0.1
 jellyseerr_version: 0.0.1
 lubelogger_version: 0.6.2
-n8n_version: 1.13.8
-velero_version: 10.0.11
+n8n_version: 1.14.0
+immich_version: 0.9.3
+karakeep_version: 0.0.1
 
 
-# --- etcd Backup Configuration --- #
-# Automated etcd database backups for cluster state recovery
-etcd_backup:
-  enabled: true
-  
-  # Backup schedule (daily at 3 AM by default)
-  schedule: "0 3 * * *"
-  
-  # Storage backends for etcd backups (can enable multiple)
-  storage:
-    # Amazon S3
-    aws_s3:
-      enabled: false
-      bucket: "my-cluster-etcd-backups"
-      region: "us-west-2"
-      # Use IAM roles or store credentials in vault
-      access_key: "{{ vault_aws_access_key | default('') }}"
-      secret_key: "{{ vault_aws_secret_key | default('') }}"
-    
-    # Backblaze B2 (S3-compatible)
-    backblaze_b2:
-      enabled: false
-      bucket: "my-cluster-etcd-backups"
-      region: "us-west-000"
-      endpoint: "https://s3.us-west-000.backblazeb2.com"
-      # Application Key ID and Application Key from Backblaze
-      access_key: "{{ vault_backblaze_key_id | default('') }}"
-      secret_key: "{{ vault_backblaze_key | default('') }}"
-    
-    # Local NAS via NFS
-    local_nas:
-      enabled: true
-      # NFS server configuration
-      nfs:
-        server: "192.168.1.100"
-        path: "/volume1/backups/etcd"
-        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
-      # Local mount path for etcd backups
-      local_path: "/mnt/nas-etcd-backups"
-      # Storage size allocation for etcd backups
-      size: "50Gi"
-    
-    # SFTP storage option
-    sftp:
-      enabled: false
-      server: "your-sftp-server.com"
-      port: "22"
-      username: "backups"
-      password: "{{ vault_sftp_password | default('') }}"
-      # Private key authentication (alternative to password)
-      private_key: "{{ vault_sftp_private_key | default('') }}"
-      # Remote path for backups
-      remote_path: "/backups/etcd"
-      # Local staging directory
-      local_staging: "/tmp/etcd-backup-staging"
-  
-  # Backup retention policy
-  retention:
-    # Keep this many of the most recent backups (recommended: 20)
-    keep_backups: 20
-  
-  # etcd connection configuration
-  etcd:
-    # etcd endpoints (RKE2 default paths)
-    endpoints: "https://127.0.0.1:2379"
-    # Certificate paths (RKE2 default locations)
-    ca_cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-ca.crt"
-    cert_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.crt"
-    key_path: "/var/lib/rancher/rke2/server/tls/etcd/server-client.key"
-  
-  # Backup compression (recommended for storage efficiency)
-  compression: true
-  
-  # Encryption for backups (optional)
-  encryption:
-    enabled: false
-    # GPG key ID for encryption
-    gpg_key_id: "{{ vault_backup_gpg_key | default('') }}"
-  
-  # Monitoring and alerting
-  monitoring:
-    enabled: true
-    # Send alerts on backup failures
-    alerting: true
-
-# Deploy etcd backup CronJob
-deploy_etcd_backup: "{{ etcd_backup.enabled }}"
 
 # Server configuration
 perform_full_upgrade: true

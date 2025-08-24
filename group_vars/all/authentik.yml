@@ -120,3 +120,18 @@ authentik_apps:
     sub_mode: user_email
     signing_key: true
     additional_config: []
+  - name: Karakeep
+    slug: karakeep
+    namespace: karakeep
+    deploy_condition: deploy_karakeep | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://karakeep.{{ domain }}/api/auth/callback/custom"
+    meta_launch_url: "https://karakeep.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: karakeep-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
+

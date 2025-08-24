@@ -1,0 +1,84 @@
+
+
+## Karakeep Web Application
+karakeep:
+  karakeep:
+    env:
+      - name: DATA_DIR
+        value: "/data"
+      - name: MEILI_ADDR
+        value: "http://localhost:7700"
+      - name: BROWSER_WEB_URL
+        value: "http://localhost:9222"
+      - name: NEXTAUTH_SECRET
+        value: "{{ vault_karakeep_nextauth }}"
+      - name: NEXTAUTH_URL
+        value: "https://karakeep.{{ domain }}"
+      - name: OAUTH_WELLKNOWN_URL
+        value: "https://authentik.{{ domain }}/application/o/karakeep/.well-known/openid-configuration"    
+      - name: OAUTH_PROVIDER_NAME
+        value: "authentik"
+      - name: OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING
+        value: "true"            
+      - name: DISABLE_PASSWORD_AUTH
+        value: "true"                
+
+    extraEnv: 
+      - name: OAUTH_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: karakeep-authentik-credentials
+            key: authentik_client_id
+      - name: OAUTH_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: karakeep-authentik-credentials
+            key: authentik_client_secret            
+    
+    service:
+      port: 3000
+    
+
+  ## Ingress settings
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: karakeep.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - karakeep.{{ domain }}
+
+  ## Persistence settings
+  persistence:
+    enabled: true
+    
+    # Karakeep data storage
+    data:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    
+    # MeiliSearch data storage
+    meilisearch:
+      storageClass: longhorn
+      accessMode: ReadWriteOnce
+      size: 2Gi
+
+  ## Secret configuration
+  secrets:
+    # Set to true to create a secret for environment variables
+    create: true
+    # Name of existing secret to use
+    existingSecret: ""
+    # Environment variables to include in secret
+    env: {}
+      # NEXTAUTH_SECRET: "your-secure-random-string"
+      # OPENAI_API_KEY: "your-openai-api-key"
+      # MEILI_MASTER_KEY: "your-meilisearch-master-key"
