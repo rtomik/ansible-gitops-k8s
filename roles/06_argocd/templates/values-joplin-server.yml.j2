@@ -1,0 +1,97 @@
+joplin-server:
+  ## Image settings
+  image:
+    repository: joplin/server
+    tag: "3.4.2"
+    pullPolicy: IfNotPresent
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hosts:
+      - host: joplin.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - joplin.{{ domain }}
+
+
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      timeoutSeconds: 10
+      failureThreshold: 3
+      successThreshold: 1
+      path: /api/ping
+      # Host header for health checks to bypass origin validation
+      # Update this to match your actual domain
+      httpHeaders:
+        - name: Host
+          value: joplin.{{ domain }}
+    readiness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+      path: /api/ping
+      # Host header for health checks to bypass origin validation
+      # Update this to match your actual domain
+      httpHeaders:
+        - name: Host
+          value: joplin.{{ domain }}
+
+  env:
+    # Application Settings
+    APP_PORT: "22300"
+    APP_BASE_URL: "https://joplin.{{ domain }}"
+    
+    # Database Settings (PostgreSQL required)
+    DB_CLIENT: "pg"
+
+  ## PostgreSQL configuration (External database required)
+  postgresql:
+    # External PostgreSQL settings (required)
+    external:
+      enabled: true
+      host: "postgres-cluster-pooler.dbs.svc.cluster.local"
+      port: 5432
+      # Use existing secret for database credentials
+      existingSecret: "joplin-server-db-credentials"
+      userKey: "username"
+      passwordKey: "password"
+      databaseKey: "database"
+
+  ## Joplin Server Configuration
+  joplin:
+    # Admin settings
+    admin:
+      # First admin user email (set during first setup)
+      email: "{{ email }}"
+      # First admin user password (set during first setup) 
+      password: "admin"
+    
+    # Server settings
+    server:
+      # Maximum request body size (in bytes)
+      maxRequestBodySize: "200mb"
+      # Session timeout in seconds
+      sessionTimeout: 86400
+      # Enable/disable user registration
+      enableUserRegistration: false
+      # Enable/disable sharing
+      enableSharing: true
+      # Enable/disable public notes
+      enablePublicNotes: false
+
+  persistence:
+    enabled: true
+    storageClass: "longhorn"
+    accessMode: ReadWriteOnce
+    size: 3Gi

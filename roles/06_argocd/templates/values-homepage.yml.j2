@@ -138,6 +138,11 @@ homepage:
             href: https://n8n.{{ domain }}
             description: Automation tool
 {% endif %}
+{% if deploy_mealie %}
+        - mealie:
+            href: https://mealie.{{ domain }}
+            description: Recipe Manager
+{% endif %}
 
     widgets:
       - kubernetes:

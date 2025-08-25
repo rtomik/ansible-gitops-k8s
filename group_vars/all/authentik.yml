@@ -134,4 +134,20 @@ authentik_apps:
     sub_mode: user_email
     signing_key: true
     additional_config: []
+  - name: Mealie
+    slug: mealie
+    namespace: apps
+    deploy_condition: deploy_mealie | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://mealie.{{ domain }}/login"
+      - matching_mode: strict
+        url: "https://mealie.{{ domain }}/login?direct=1"
+    meta_launch_url: "https://mealie.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: mealie-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
 

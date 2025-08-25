@@ -160,6 +160,18 @@ app_definitions:
     version: "{{ karakeep_version }}"
     repo: "https://rtomik.github.io/helm-charts"
     namespace: "karakeep"
+  mealie:
+    enabled: "{{ deploy_mealie }}"
+    chart_name: "mealie"
+    version: "{{ mealie_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "apps"
+  joplin-server:
+    enabled: "{{ deploy_joplin_server }}"
+    chart_name: "joplin-server"
+    version: "{{ joplin_server_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "apps"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |
