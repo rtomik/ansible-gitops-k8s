@@ -236,7 +236,7 @@ postgresql:
 
   # Storage configuration
   storage:
-    size: "25Gi"
+    size: "10Gi"
     storage_class: "longhorn"  # Using Longhorn for persistent storage
 
   # PostgreSQL configuration parameters
@@ -271,12 +271,28 @@ postgresql:
   # Application databases - each gets its own database and user
   databases:
     immich:
-      enabled: true
+      enabled: "{{ deploy_immich }}"
       database_name: "immich"
       username: "immich_user"
       password: "{{ vault_immich_db_password | default('placeholder') }}"
       description: "Immich photo management database"
       app_namespace: "immich"
+      privileges: "ALL"
+    mealie:
+      enabled: "{{ deploy_mealie }}"
+      database_name: "mealie"
+      username: "mealie_user"
+      password: "{{ vault_mealie_db_password | default('placeholder') }}"
+      description: "Mealie recipe manager"
+      app_namespace: "apps"
+      privileges: "ALL"
+    joplin-server:
+      enabled: "{{ deploy_joplin_server }}"
+      database_name: "joplin-server"
+      username: "joplin_user"
+      password: "{{ vault_joplin_db_password | default('placeholder') }}"
+      description: "Joplin"
+      app_namespace: "apps"
       privileges: "ALL"
 
     # Example databases (uncomment and configure when needed):
@@ -329,6 +345,8 @@ deploy_lubelogger: true
 deploy_n8n: true
 deploy_immich: true
 deploy_karakeep: true
+deploy_mealie: true
+deploy_joplin_server: true
 
 # Jellyfin hw acceleration
 # More info https://www.johanneskueber.com/posts/hardware_acceleration_kubernets_jellyfin/
@@ -422,8 +440,8 @@ lubelogger_version: 0.6.2
 n8n_version: 1.14.0
 immich_version: 0.9.3
 karakeep_version: 0.0.1
-
-
+mealie_version: 0.0.1
+joplin_server_version: 0.0.2
 
 # Server configuration
 perform_full_upgrade: true
