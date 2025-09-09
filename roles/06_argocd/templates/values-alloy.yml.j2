@@ -1,0 +1,93 @@
+---
+alloy:
+
+  alloy:
+    configMap:
+      content: |-
+        // alloy-settings.alloy
+        logging {  
+          level  = "info"  
+          format = "logfmt"  
+        }
+
+        discovery.kubernetes "pods" {  
+          role = "pod"  
+        }
+
+        discovery.relabel "kube_relabel" {  
+          targets = discovery.kubernetes.pods.targets
+
+          // Essential K8s Labels (add/remove as needed)  
+          rule {  
+            source_labels = ["__meta_kubernetes_namespace"]  
+            target_label  = "namespace"  
+          }  
+          rule {  
+            source_labels = ["__meta_kubernetes_pod_name"]  
+            target_label  = "pod"  
+          }  
+          rule {  
+            source_labels = ["__meta_kubernetes_pod_container_name"]  
+            target_label  = "container"  
+          }  
+          rule {  
+            source_labels = ["__meta_kubernetes_node_name"]  
+            target_label  = "node_name"  
+          }  
+          // Keep __path__ definition  
+          rule {  
+            source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]  
+            target_label  = "__path__"  
+            replacement   = "/var/log/pods/*$1/*.log"  
+          }
+
+          // Explicitly add 'app' label if __meta_kubernetes_pod_label_app exists  
+          rule {  
+            source_labels = ["__meta_kubernetes_pod_label_app"]  
+            action        = "replace"  
+            target_label  = "app"  
+            regex         = "(.+)"  // Capture any non-empty value  
+            replacement   = "$1"    // Use the captured value  
+          }
+
+          rule {  
+            action = "labeldrop"  
+            regex  = "__meta_kubernetes_pod_label_app" // <<< Match the label NAME to drop  
+          }  
+        }
+
+        // Tail logs from the RELABELED targets  
+        loki.source.kubernetes "kube_logs" {  
+          targets    = discovery.relabel.kube_relabel.output  
+          forward_to = [loki.write.local_loki.receiver] // Forward DIRECTLY to exporter  
+        }
+
+        // Loki exporter component  
+        loki.write "local_loki" {  
+          endpoint {  
+            url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"  
+          }  
+        }  
+
+  configReloader:
+    # -- Enables automatically reloading when the Alloy config changes.
+    enabled: true
+
+  serviceMonitor:
+    enabled: true
+
+  ingress:
+    main:
+      enabled: true
+      className: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      hosts:
+        - host: alloy.{{ domain }}
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - alloy.{{ domain }}

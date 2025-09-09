@@ -6,7 +6,8 @@ timezone: "UTC" # Change this to your desired time zone, e.g., "America/New_York
 lang: en_US.UTF-8 # Change this to your language eg. en_US.UTF-8 used for lubelogger
 
 # Define IP for kubevip loadbalancer
-kube_vip_address: "192.168.1.200" # free ip in your network range
+# Free ip in your subnet
+kube_vip_address: "192.168.1.200"
 
 # --- Domain Configuration --- #
 # Create A record:
@@ -21,21 +22,22 @@ email: my@email.com
 # Zone Resources: Include - All Zones
 cloudflare:
   enabled: false
-  api_token: "< API TOKEN >"
+  api_token: "{{ vault_cloudflare_token }}"
   tls_secret_name: "wildcard-{{ domain }}-tls"
 
 # --- Git --- #
-# Gitea is used as main git repo currently
 deploy_gitea: true
 git_organization_name: "homelab"
 git_repo_name: "argocd"
 deploy_gitlab: false
 
+# Gitea uses SQLite initially, then migrates to CloudNativePG via ArgoCD
+
 # --- VPN Access --- #
 # If you want to access the cluster via Tailscale VPN
 tailscale:
   enabled: false
-  auth_key: "<tailscale auth key>"
+  auth_key: "{{ vault_tailscale_key }}"
   # Define your local subnet ex. 192.168.1.0/24
   subnet: 192.168.1.0/24
   hostname: "rke2-cluster"
@@ -46,48 +48,42 @@ tailscale:
   tags: []
 
 # --- External Storage --- #
-
-# --- External Storage --- #
 external_storage:
   enabled: false
   nas:
     # SMB/CIFS Example
     - name: "smb"
       enabled: false
-      type: "smb" # smb, nfs, or sftp
-      server: "//storagebox.de/user/media"
+      type: "smb"
+      server: "192.168.1.10"
 
       # SMB specific settings
       smb:
         driver_version: "v1.18.0"
-        user: ""
+        user: "media"
         password: ""
-
-      # NFS specific settings
-      nfs:
-        path: "/volume1/media"
-        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+        share: "media"
 
       # Storage configuration
-      size: "1Ti"
+      size: "5Ti"
       storage_class: "media-storage"
       reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
       access_mode: "ReadWriteMany"
 
     # SFTP Example (Hetzner Storage Box)
     - name: "media"
-      enabled: true
+      enabled: false
       type: "sftp"
-      server: "<server>"  # Your storage box hostname
+      server: "u-sub1.your-storagebox.de" 
 
       # SFTP specific settings
       ssh:
         port: "23"
       sftp:
-        user: "u0-sub1"  # Your storage box username
+        user: "u-sub1"  # Your storage box username
         port: "22"
         path: "/media"       # Root path or subdirectory like "/backup"
-        password: "<password>"
+        password: "{{ vault_sftp_password }}"
 
         # Optional settings
         image: "alpine:3.18"
@@ -105,16 +101,16 @@ external_storage:
     - name: "nfs"
       enabled: false
       type: "nfs"
-      server: "192.168.1.100"
+      server: "192.168.1.10"
 
       # NFS specific settings
       nfs:
-        path: "/volume1/kubernetes"
+        path: "/nfs/media"
         mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
 
       # Storage configuration
-      size: "2Ti"
-      storage_class: "nfs-fast"
+      size: "5Ti"
+      storage_class: "nfs"
       reclaim_policy: "Retain"
       access_mode: "ReadWriteMany"
 
@@ -122,11 +118,10 @@ external_storage:
   applications:
     qbittorrent:
       enabled: false
-      storage_name: "media"  # Must match one of the 'name' fields above
+      storage_name: "smb"  # Must match one of the 'name' fields above
       namespace: "arr"
-      size: "500Gi"
+      size: "5Ti"
       pvc_name: qbittorrent-data
-
 
 # --- ETCD Backup Configuration --- #
 # Automated etcd database backups for cluster state recovery
@@ -150,12 +145,12 @@ etcd_backup:
     # Backblaze B2 (S3-compatible)
     backblaze_b2:
       enabled: false
-      bucket: ""
+      bucket: "bucket"
       region: "us-west-000"
       endpoint: "https://s3.eu-central-003.backblazeb2.com"
       # Application Key ID and Application Key from Backblaze
       access_key: ""
-      secret_key: ""
+      secret_key: "{{ vault_backblaze_key }}"
 
     # Local NAS via NFS
     local_nas:
@@ -220,24 +215,23 @@ deploy_etcd_backup: "{{ etcd_backup.enabled }}"
 # CloudNativePG for centralized PostgreSQL database
 # More info https://cloudnative-pg.io/documentation/preview/quickstart/
 postgresql:
-  enabled: false
+  enabled: true
   # Cluster configuration
   cluster_name: "postgres-cluster"
   namespace: "dbs"
   instances: 3  # High availability with 3 instances
-  # Custom image with pgvecto.rs extension for Immich support
   image_name: "ghcr.io/cloudnative-pg/postgresql:17.5"
 
   # Database configuration
   default_database: "postgres"
   app_user: "app"
-  superuser_password: ""
-  app_password: ""
+  superuser_password: "{{ vault_postgresql_superuser_password | default('verysecurepassword123') }}"
+  app_password: "{{ vault_postgresql_app_password | default('verysecurepassword123') }}"
 
   # Storage configuration
   storage:
-    size: "10Gi"
-    storage_class: "longhorn"  # Using Longhorn for persistent storage
+    size: "20Gi"
+    storage_class: "longhorn"
 
   # PostgreSQL configuration parameters
   config:
@@ -270,19 +264,11 @@ postgresql:
 
   # Application databases - each gets its own database and user
   databases:
-    immich:
-      enabled: "{{ deploy_immich }}"
-      database_name: "immich"
-      username: "immich_user"
-      password: "{{ vault_immich_db_password | default('placeholder') }}"
-      description: "Immich photo management database"
-      app_namespace: "immich"
-      privileges: "ALL"
     mealie:
       enabled: "{{ deploy_mealie }}"
       database_name: "mealie"
       username: "mealie_user"
-      password: "{{ vault_mealie_db_password | default('placeholder') }}"
+      password: "{{ vault_mealie_db_password | default('verysecurepassword123') }}"
       description: "Mealie recipe manager"
       app_namespace: "apps"
       privileges: "ALL"
@@ -290,7 +276,7 @@ postgresql:
       enabled: "{{ deploy_joplin_server }}"
       database_name: "joplin-server"
       username: "joplin_user"
-      password: "{{ vault_joplin_db_password | default('placeholder') }}"
+      password: "{{ vault_joplin_db_password | default('verysecurepassword123') }}"
       description: "Joplin"
       app_namespace: "apps"
       privileges: "ALL"
@@ -325,16 +311,16 @@ deploy_grafana: true
 deploy_loki: true
 
 # infrastructure
-deploy_rancher: true
+deploy_rancher: false
 deploy_authentik: true
 deploy_renovate: true
 deploy_wg_easy: false
-deploy_cnpg: true # central postgresql used for immich
+deploy_cnpg: true # central postgresql
 
 # Apps
 deploy_audiobookshelf: true
 deploy_homeassistant: true
-deploy_recipya: true
+deploy_recipya: false
 deploy_open_webui: true
 deploy_jellyfin: true
 deploy_arr: true # Will deploy sonarr radarr jellyserr qbittorrent-vpn
@@ -351,7 +337,7 @@ deploy_joplin_server: true
 # Jellyfin hw acceleration
 # More info https://www.johanneskueber.com/posts/hardware_acceleration_kubernets_jellyfin/
 jellyfin_hw:
-  enabled: true
+  enabled: false
   path: /dev/dri
 
 # --- qbittorrent-vpn --- #
@@ -366,7 +352,7 @@ vpn:
   provider: "nordvpn"
   # Choose from: openvpn or wireguard
   type: "openvpn"
-    # Server selection (comma-separated lists)
+  # Server selection (comma-separated lists)
   server_countries: "Netherlands"  # e.g., "Netherlands,Germany,Sweden"
   server_cities: ""            # e.g., "Amsterdam,Frankfurt" (optional)
   server_names: ""             # e.g., "nl1,nl2" (optional)
@@ -394,33 +380,32 @@ vpn:
 # ----- Optional variables --------- #
 
 # RKE2 cluster variables
-rke2_version: "v1.32.6+rke2r1"
+rke2_version: "v1.33.4+rke2r1"
 install_rke2_type: "server"
-kube_vip_version: "v0.9.1"
+kube_vip_version: "v1.0.0"
 rke2_hostname: "rke2.{{ domain }}"
 
 # Helm chart versions
 # Infrastructure
 traefik_version: 34.4.1
 certmanager_version: 1.16.3
-argocd_version: 7.8.15
-longhorn_version: 1.8.1
-authentik_version: 2024.12.2
-rancher_version: 2.11.3
-metallb_version: 0.14.9
+argocd_version: 8.2.7
+longhorn_version: 1.9.1
+authentik_version: 2025.8.1
+rancher_version: 2.12.1
 gitlab_version: 8.8.0
-gitea_version: 11.0.1
+gitea_version: 12.2.0
 reflector_version: 7.1.288
 renovate_version: 39.251.0
 wg_easy_version: 0.1.2
 cnpg_version: 0.26.0
 
 # Monitoring
-prometheus_stack_version: 70.4.1
+prometheus_stack_version: 77.5.0
 prometheus_crds_version: 19.0.0
-grafana_version: 8.8.5
+grafana_version: 8.15.0
 loki_version: 6.24.1
-promtail_version: 6.16.5
+alloy_version: 1.2.1
 
 # Apps
 jellyfin_version: 2.3.0
@@ -453,5 +438,5 @@ ansible_user: "{{ user }}"
 ansible_initial_user: root
 
 # Vault
-vault_file: "../group_vars/vault.yml"
+vault_file: "../group_vars/all/vault.yml"
 vault_password_file: "../.vault"

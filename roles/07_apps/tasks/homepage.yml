@@ -4,7 +4,7 @@
     api_version: apps/v1
     kind: Deployment
     name: homepage
-    namespace: homepage
+    namespace: apps
   register: homepage_deployment
   until:
     - homepage_deployment.resources is defined
@@ -19,7 +19,7 @@
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Pod
-    namespace: homepage
+    namespace: apps
     label_selectors:
       - app.kubernetes.io/name=homepage
     field_selectors:
@@ -57,7 +57,7 @@
 
 - name: Copy icons to pod with retry
   kubernetes.core.k8s_cp:
-    namespace: homepage
+    namespace: apps
     pod: "{{ current_pod.metadata.name }}"
     local_path: "{{ role_path }}/homepage/icons"
     remote_path: "/app/public/"
@@ -79,7 +79,7 @@
     state: patched
     kind: Deployment
     name: homepage
-    namespace: homepage
+    namespace: apps
     definition:
       spec:
         template:

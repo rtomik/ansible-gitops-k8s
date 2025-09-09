@@ -50,7 +50,7 @@ authentik_apps:
         template_type: gitea
   - name: Donetick
     slug: donetick
-    namespace: donetick
+    namespace: apps
     deploy_condition: deploy_donetick | bool
     client_type: confidential
     redirect_uris:
@@ -64,7 +64,7 @@ authentik_apps:
     additional_config: []
   - name: Jellyfin
     slug: jellyfin
-    namespace: jellyfin
+    namespace: arr
     deploy_condition: deploy_jellyfin | bool
     client_type: confidential
     redirect_uris:
@@ -78,7 +78,7 @@ authentik_apps:
     additional_config: []
   - name: OpenWebui
     slug: openwebui
-    namespace: open-webui
+    namespace: apps
     deploy_condition: deploy_open_webui | bool
     client_type: confidential
     redirect_uris:
@@ -92,7 +92,7 @@ authentik_apps:
     additional_config: []
   - name: Paperless-ngx
     slug: paperless-ngx
-    namespace: paperless-ngx
+    namespace: apps
     deploy_condition: deploy_paperless_ngx | bool
     client_type: confidential
     redirect_uris:
@@ -106,7 +106,7 @@ authentik_apps:
     additional_config: []
   - name: Audiobookshelf
     slug: audiobookshelf
-    namespace: audiobookshelf
+    namespace: apps
     deploy_condition: deploy_audiobookshelf | bool
     client_type: confidential
     redirect_uris:
@@ -122,7 +122,7 @@ authentik_apps:
     additional_config: []
   - name: Karakeep
     slug: karakeep
-    namespace: karakeep
+    namespace: apps
     deploy_condition: deploy_karakeep | bool
     client_type: confidential
     redirect_uris:

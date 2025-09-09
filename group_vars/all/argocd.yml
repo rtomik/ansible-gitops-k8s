@@ -31,10 +31,10 @@ app_definitions:
     version: "{{ loki_version }}"
     repo: "https://grafana.github.io/helm-charts"
     namespace: "monitoring"
-  promtail:
+  alloy:
     enabled: "{{ deploy_loki }}"
-    chart_name: "promtail"
-    version: "{{ promtail_version }}"
+    chart_name: "alloy"
+    version: "{{ alloy_version }}"
     repo: "https://grafana.github.io/helm-charts"
     namespace: "monitoring"
   renovate:
@@ -54,25 +54,25 @@ app_definitions:
     chart_name: "audiobookshelf"
     version: "{{ audiobookshelf_version }}"
     repo: "https://gitlab.com/api/v4/projects/57546317/packages/helm/release"
-    namespace: "audiobookshelf"
+    namespace: "apps"
   open-webui:
     enabled: "{{ deploy_open_webui }}"
     chart_name: "open-webui"
     version: "{{ openwebui_version }}"
     repo: "https://helm.openwebui.com/"
-    namespace: "open-webui"
+    namespace: "apps"
   homepage:
     enabled: "{{ deploy_homepage }}"
     chart_name: "homepage"
     version: "{{ homepage_version }}"
     repo: "https://jameswynn.github.io/helm-charts"
-    namespace: "homepage"
+    namespace: "apps"
   donetick:
     enabled: "{{ deploy_donetick }}"
     chart_name: "donetick"
     version: "{{ donetick_version }}"
     repo: "https://rtomik.github.io/helm-charts"
-    namespace: "donetick"
+    namespace: "apps"
   jellyfin:
     enabled: "{{ deploy_jellyfin }}"
     chart_name: "jellyfin"
@@ -90,7 +90,7 @@ app_definitions:
     chart_name: "recipya"
     version: "{{ recipya_version }}"
     repo: "https://rtomik.github.io/helm-charts"
-    namespace: "recipya"
+    namespace: "apps"
   radarr:
     enabled: "{{ deploy_arr }}"
     chart_name: "radarr"
@@ -132,7 +132,7 @@ app_definitions:
     chart_name: "n8n"
     version: "{{ n8n_version }}"
     repo: "https://community-charts.github.io/helm-charts"
-    namespace: "n8n"
+    namespace: "apps"
   cnpg:
     enabled: "{{ deploy_cnpg }}"
     chart_name: "cloudnative-pg"
@@ -153,13 +153,13 @@ app_definitions:
     chart_name: "immich"
     version: "{{ immich_version }}"
     repo: "https://immich-app.github.io/immich-charts"
-    namespace: "immich"
+    namespace: "apps"
   karakeep:
     enabled: "{{ deploy_karakeep }}"
     chart_name: "karakeep"
     version: "{{ karakeep_version }}"
     repo: "https://rtomik.github.io/helm-charts"
-    namespace: "karakeep"
+    namespace: "apps"
   mealie:
     enabled: "{{ deploy_mealie }}"
     chart_name: "mealie"
@@ -175,7 +175,7 @@ app_definitions:
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |
-                selectattr('value.enabled', 'boolean') |
+                selectattr('value.enabled') |
                 list }}"
 
 # Generate base directories

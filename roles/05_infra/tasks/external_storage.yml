@@ -15,6 +15,35 @@
               app.kubernetes.io/part-of: cluster-storage
 
     # SMB configuration
+    - name: Install SMB CSI Driver
+      kubernetes.core.helm:
+        name: csi-driver-smb
+        chart_ref: csi-driver-smb
+        chart_repo_url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+        chart_version: "v1.18.0"
+        release_namespace: kube-system
+        values:
+          image:
+            csiProvisioner:
+              repository: registry.k8s.io/sig-storage/csi-provisioner
+              tag: v5.0.1
+            csiAttacher:
+              repository: registry.k8s.io/sig-storage/csi-attacher 
+              tag: v4.6.1
+            csiResizer:
+              repository: registry.k8s.io/sig-storage/csi-resizer
+              tag: v1.11.1
+            livenessProbe:
+              repository: registry.k8s.io/sig-storage/livenessprobe
+              tag: v2.13.1
+            nodeDriverRegistrar:
+              repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+              tag: v2.11.1
+            smb:
+              repository: registry.k8s.io/sig-storage/smbplugin
+              tag: v1.18.0
+      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
+
     - name: Store SMB credentials in secret
       kubernetes.core.k8s:
         state: present
@@ -38,7 +67,7 @@
       kubernetes.core.helm:
         name: nfs-subdir-external-provisioner
         chart_ref: nfs-subdir-external-provisioner
-        repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+        chart_repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
         chart_version: "4.0.17"
         release_namespace: kube-system
         values:
@@ -48,6 +77,23 @@
       when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'nfs') | list | length > 0
 
     # Create storage classes - separated by type
+    - name: Delete existing SMB Storage Classes to recreate with correct parameters
+      kubernetes.core.k8s:
+        state: absent
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ item.storage_class }}"
+      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
+      ignore_errors: true
+
+    - name: Wait for SMB StorageClass deletion
+      ansible.builtin.pause:
+        seconds: 5
+      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
+
     - name: Create Storage Classes for SMB
       kubernetes.core.k8s:
         state: present
@@ -62,7 +108,7 @@
           reclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
           volumeBindingMode: Immediate
           parameters:
-            source: "{{ item.server }}"
+            source: "//{{ item.server }}/{{ item.smb.share }}"
             csi.storage.k8s.io/node-stage-secret-name: "{{ item.name }}-secret"
             csi.storage.k8s.io/node-stage-secret-namespace: "external-storage"
             csi.storage.k8s.io/provisioner-secret-name: "{{ item.name }}-secret"
