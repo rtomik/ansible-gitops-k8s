@@ -110,12 +110,22 @@
       tags:
         - argocd        
 
-- name: 07 Confire apps
+- name: 07 Monitoring
   hosts: rke2_cluster[0]
   become: true
   vars:
     ansible_user: "ansible"
   roles:
-    - role: 07_apps
+    - role: 07_monitoring
+      tags:
+        - monitoring        
+
+- name: 08 Confire apps
+  hosts: rke2_cluster[0]
+  become: true
+  vars:
+    ansible_user: "ansible"
+  roles:
+    - role: 08_apps
       tags:
         - apps        

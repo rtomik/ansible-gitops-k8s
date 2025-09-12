@@ -1,0 +1,31 @@
+---
+- name: Check if ServiceMonitor CRD exists
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: servicemonitors.monitoring.coreos.com
+  register: servicemonitor_crd
+
+- name: Create Longhorn ServiceMonitor
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: longhorn-backend
+        namespace: monitoring
+        labels:
+          team: backend
+          release: kube-prometheus-stack
+      spec:
+        selector:
+          matchLabels:
+            app: longhorn-manager
+        namespaceSelector:
+          matchNames:
+            - longhorn-system
+        endpoints:
+          - port: manager
+            interval: 30s
+            path: /metrics
+  when: servicemonitor_crd.resources | length > 0

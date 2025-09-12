@@ -1,0 +1,89 @@
+- name: Check if ServiceMonitor CRD exists
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: servicemonitors.monitoring.coreos.com
+  register: servicemonitor_crd
+
+- name: Deploy argocd Prometheus Service ServiceMonitor
+  when: deploy_prometheus and servicemonitor_crd.resources | length > 0
+  block:
+    - name: Create argocd ServiceMonitor argocd-applicationset-controller-metrics
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: argocd-applicationset-controller-metrics
+            namespace: monitoring
+            labels:
+              release: kube-prometheus-stack
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-metrics
+            namespaceSelector:
+              matchNames:
+                - argocd
+            endpoints:
+              - port: http-metrics
+
+    - name: Create argocd ServiceMonitor argocd-repo-server-metrics
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: argocd-repo-server-metrics
+            namespace: monitoring
+            labels:
+              release: kube-prometheus-stack
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-repo-server-metrics
+            namespaceSelector:
+              matchNames:
+                - argocd
+            endpoints:
+              - port: http-metrics
+
+    - name: Create argocd ServiceMonitor argocd-server-metrics
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: argocd-server-metrics
+            namespace: monitoring
+            labels:
+              release: kube-prometheus-stack
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-server-metrics
+            namespaceSelector:
+              matchNames:
+                - argocd
+            endpoints:
+              - port: http-metrics
+
+    - name: Create argocd ServiceMonitor argocd-application-controller-metrics
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: argocd-application-controller
+            namespace: monitoring
+            labels:
+              release: kube-prometheus-stack
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-application-controller
+            namespaceSelector:
+              matchNames:
+                - argocd
+            endpoints:
+              - port: http-metrics

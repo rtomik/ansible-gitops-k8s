@@ -1,0 +1,20 @@
+- import_tasks: grafana.yml
+  tags:
+    - monitoring
+    - monitoring:grafana
+
+- import_tasks: cnpg_monitoring.yml
+  when: deploy_cnpg | default(false)
+  tags:
+    - monitoring
+    - monitoring:cnpg
+
+- import_tasks: longhorn_monitoring.yml
+  tags:
+    - monitoring
+    - monitoring:longhorn
+
+- import_tasks: argocd_monitoring.yml
+  tags:
+    - monitoring
+    - monitoring:argocd

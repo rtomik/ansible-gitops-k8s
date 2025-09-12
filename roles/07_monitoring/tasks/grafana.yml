@@ -1,0 +1,38 @@
+---
+- name: Create Grafana admin credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: grafana-admin-credentials
+        namespace: monitoring
+      type: Opaque
+      data:
+        admin-user: "{{ 'admin' | b64encode }}"
+        admin-password: "{{ vault_grafana_admin_password | b64encode }}"
+  when: deploy_grafana | bool
+
+- name: Create Grafana dashboards ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: grafana-dashboards
+        namespace: monitoring
+        labels:
+          grafana_dashboard: "1"
+      data:
+        k8s-api-monitoring.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/k8s-api-monitoring.json') | string }}"
+        k8s-global.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/k8s-global.json') | string }}"
+        k8s-namespaces.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/k8s-namespaces.json') | string }}"
+        k8s-nodes.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/k8s-nodes.json') | string }}"
+        k8s-pods.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/k8s-pods.json') | string }}"
+        longhorn.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/longhorn.json') | string }}"
+        logs-app.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/logs-app.json') | string }}"
+        logs-overview.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/logs-overview.json') | string }}"
+        cloudnative-pg.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/cloudnative-pg.json') | string }}"
+  when: deploy_grafana | bool

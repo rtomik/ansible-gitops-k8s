@@ -1,0 +1,86 @@
+---
+- name: Check if ServiceMonitor CRD exists
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: servicemonitors.monitoring.coreos.com
+  register: servicemonitor_crd
+  when: deploy_cnpg and deploy_prometheus
+
+- name: Create CNPG controller metrics service
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: cnpg-controller-manager-metrics
+        namespace: cnpg-system
+        labels:
+          app.kubernetes.io/name: cloudnative-pg
+      spec:
+        ports:
+          - name: metrics
+            port: 8080
+            protocol: TCP
+            targetPort: 8080
+        selector:
+          app.kubernetes.io/name: cloudnative-pg
+  when: deploy_cnpg and deploy_prometheus
+
+- name: Create CNPG controller ServiceMonitor
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: cnpg-controller-manager
+        namespace: cnpg-system
+        labels:
+          app.kubernetes.io/name: cloudnative-pg
+          release: kube-prometheus-stack
+      spec:
+        endpoints:
+          - path: /metrics
+            port: metrics
+            interval: 30s
+            scheme: http
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: cloudnative-pg
+  when: deploy_cnpg and deploy_prometheus and servicemonitor_crd.resources | length > 0
+  tags:
+    - infra
+    - infra:cnpg
+    - infra:monitoring
+
+- name: Check if PodMonitor CRD exists
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: podmonitors.monitoring.coreos.com
+  register: podmonitor_crd
+  when: deploy_cnpg and deploy_prometheus
+
+- name: Create CNPG cluster PodMonitor
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: PodMonitor
+      metadata:
+        name: cnpg-cluster-pods
+        namespace: dbs
+        labels:
+          release: kube-prometheus-stack
+      spec:
+        selector:
+          matchLabels:
+            cnpg.io/podRole: instance
+        podMetricsEndpoints:
+          - port: metrics
+            path: /metrics
+            interval: 30s
+  when: deploy_cnpg and deploy_prometheus and podmonitor_crd.resources | length > 0
+  tags:
+    - infra
+    - infra:cnpg
+    - infra:monitoring

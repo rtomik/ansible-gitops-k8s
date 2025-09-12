@@ -7,17 +7,26 @@ redis-ha:
   replicas: {{ [groups['master'] | length, 3] | min }}
   haproxy:
     replicas: {{ [groups['master'] | length, 3] | min }}
+    metrics:
+      enabled: true
 
 controller:
   replicas: 1
+  metrics:
+    enabled: true
 
 repoServer:
   autoscaling:
     enabled: true
     minReplicas: 2
 
+  metrics:
+    enabled: true
+
 applicationSet:
   replicas: 2
+  metrics:
+    enabled: true
 
 server:
   autoscaling:
@@ -33,6 +42,9 @@ server:
     extraTls:
       - hosts:
         - argocd.{{ domain }}
+
+  metrics:
+    enabled: true
 
 configs:
   params:
@@ -99,3 +111,8 @@ dex:
     requests:
       cpu: 10m
       memory: 128Mi
+
+notifications:
+  enabled: true
+  metrics:
+    enable: true
