@@ -1,0 +1,223 @@
+---
+- name: Deploy PostgreSQL databases directly to cluster
+  block:
+    - name: Create database namespace
+      kubernetes.core.k8s:
+        name: "{{ postgresql.namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create PostgreSQL superuser secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ postgresql.cluster_name }}-superuser"
+            namespace: "{{ postgresql.namespace }}"
+          type: kubernetes.io/basic-auth
+          data:
+            username: "{{ 'postgres' | b64encode }}"
+            password: "{{ postgresql.superuser_password | b64encode }}"
+
+    - name: Create PostgreSQL app user secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ postgresql.cluster_name }}-app"
+            namespace: "{{ postgresql.namespace }}"
+          type: kubernetes.io/basic-auth
+          data:
+            username: "{{ postgresql.app_user | b64encode }}"
+            password: "{{ postgresql.app_password | b64encode }}"
+
+    - name: Create database credentials secrets in database namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ item.key }}-db-credentials"
+            namespace: "{{ postgresql.namespace }}"
+            labels:
+              app: "{{ item.key }}"
+              component: database
+          type: kubernetes.io/basic-auth
+          data:
+            username: "{{ item.value.username | b64encode }}"
+            password: "{{ item.value.password | b64encode }}"
+            database: "{{ item.value.database_name | b64encode }}"
+            connection_string: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-pooler.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+            connection_string_rw: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-rw.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+            connection_string_ro: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-ro.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+      loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
+
+    - name: Create database credentials secrets in application namespaces
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ item.key }}-db-credentials"
+            namespace: "{{ item.value.app_namespace | default(item.key) }}"
+            labels:
+              app: "{{ item.key }}"
+              component: database
+              copied-from: "{{ postgresql.namespace }}"
+          type: kubernetes.io/basic-auth
+          data:
+            username: "{{ item.value.username | b64encode }}"
+            password: "{{ item.value.password | b64encode }}"
+            database: "{{ item.value.database_name | b64encode }}"
+            connection_string: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-pooler.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+            connection_string_rw: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-rw.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+            connection_string_ro: >-
+              {{ ('postgresql://' + item.value.username + ':' + item.value.password + '@' +
+              postgresql.cluster_name + '-ro.' + postgresql.namespace + '.svc.cluster.local:5432/' +
+              item.value.database_name) | b64encode }}
+      loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
+
+    - name: Create PostgreSQL cluster
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          {
+            "apiVersion": "postgresql.cnpg.io/v1",
+            "kind": "Cluster",
+            "metadata": {
+              "name": "{{ postgresql.cluster_name }}",
+              "namespace": "{{ postgresql.namespace }}"
+            },
+            "spec": {
+              "description": "Main PostgreSQL Cluster - deployed directly",
+              "instances": {{ postgresql.instances | int }},
+              "imageName": "{{ postgresql.image_name | default('') }}",
+              "postgresql": {
+                "parameters": {
+                  "max_connections": "{{ postgresql.config.max_connections }}",
+                  "shared_buffers": "{{ postgresql.config.shared_buffers }}",
+                  "effective_cache_size": "{{ postgresql.config.effective_cache_size }}",
+                  "maintenance_work_mem": "{{ postgresql.config.maintenance_work_mem }}"
+                }
+              },
+              "bootstrap": {
+                "initdb": {
+                  "database": "{{ postgresql.default_database }}",
+                  "owner": "{{ postgresql.app_user }}",
+                  "secret": {
+                    "name": "{{ postgresql.cluster_name }}-app"
+                  }
+                }
+              },
+              "managed": {
+                "roles": [
+                  {% for item in postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list %}
+                  {
+                    "name": "{{ item.value.username }}",
+                    "ensure": "present",
+                    "comment": "Database user for {{ item.key }}",
+                    "login": true,
+                    "superuser": false,
+                    "passwordSecret": {
+                      "name": "{{ item.key }}-db-credentials"
+                    }
+                  }{% if not loop.last %},{% endif %}
+                  {% endfor %}
+                ]
+              },
+              "superuserSecret": {
+                "name": "{{ postgresql.cluster_name }}-superuser"
+              },
+              "storage": {
+                "size": "{{ postgresql.storage.size }}",
+                "storageClass": "{{ postgresql.storage.storage_class }}"
+              },
+              "monitoring": {
+                "enabled": true,
+                "enablePodMonitor": true
+              }
+            }
+          }
+
+    - name: Create PostgreSQL pooler
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          {
+            "apiVersion": "postgresql.cnpg.io/v1",
+            "kind": "Pooler",
+            "metadata": {
+              "name": "{{ postgresql.cluster_name }}-pooler",
+              "namespace": "{{ postgresql.namespace }}"
+            },
+            "spec": {
+              "cluster": {
+                "name": "{{ postgresql.cluster_name }}"
+              },
+              "instances": {{ postgresql.pooler.instances | int }},
+              "type": "rw",
+              "pgbouncer": {
+                "poolMode": "{{ postgresql.pooler.pool_mode }}",
+                "parameters": {
+                  "max_client_conn": "{{ postgresql.pooler.max_client_conn }}",
+                  "default_pool_size": "{{ postgresql.pooler.default_pool_size }}",
+                  "min_pool_size": "{{ postgresql.pooler.min_pool_size }}",
+                  "reserve_pool_size": "{{ postgresql.pooler.reserve_pool_size }}",
+                  "server_lifetime": "{{ postgresql.pooler.server_lifetime }}",
+                  "server_idle_timeout": "{{ postgresql.pooler.server_idle_timeout }}"
+                }
+              }
+            }
+          }
+      when: postgresql.pooler.enabled | default(true) | bool
+
+    - name: Wait for PostgreSQL cluster to be ready
+      kubernetes.core.k8s_info:
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        name: "{{ postgresql.cluster_name }}"
+        namespace: "{{ postgresql.namespace }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 600
+
+    - name: Create application databases
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: postgresql.cnpg.io/v1
+          kind: Database
+          metadata:
+            name: "{{ item.key }}-database"
+            namespace: "{{ postgresql.namespace }}"
+          spec:
+            name: "{{ item.value.database_name }}"
+            cluster:
+              name: "{{ postgresql.cluster_name }}"
+            owner: "{{ item.value.username }}"
+      loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
+

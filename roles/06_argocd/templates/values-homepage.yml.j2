@@ -137,12 +137,28 @@ homepage:
         - n8n:
             href: https://n8n.{{ domain }}
             description: Automation tool
+            icon: /icons/n8n.svg              
 {% endif %}
 {% if deploy_mealie %}
-        - mealie:
+        - Mealie:
             href: https://mealie.{{ domain }}
             description: Recipe Manager
+            icon: /icons/mealie.svg
 {% endif %}
+{% if deploy_joplin_server %}
+        - Joplin:
+            href: https://joplin.{{ domain }}
+            description: Notes
+            icon: /icons/joplin.svg
+{% endif %}
+{% if deploy_karakeep %}
+        - Karakeep:
+            href: https://karakeep.{{ domain }}
+            description: Bookmarks
+            icon: /icons/karakeep.svg
+{% endif %}
+
+
 
     widgets:
       - kubernetes:

@@ -23,7 +23,7 @@
     - { name: gitea, url: "https://dl.gitea.io/charts"}
     - { name: authentik, url: "https://charts.goauthentik.io/"}
     - { name: csi-driver-smb, url: "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts"}
-    
+    - { name: cloudnative-pg, url: "https://cloudnative-pg.github.io/charts"}
   tags:
     - infra
     - infra:repos
@@ -31,6 +31,8 @@
     - infra:longhorn
     - infra:traefik
     - infra:init
+    - infra:postgres
+    - infra:db
 
 - name: Update Helm repositories
   ansible.builtin.shell: helm repo update
@@ -57,6 +59,19 @@
   tags:
     - infra
     - infra:longhorn
+
+- import_tasks: postgres.yml
+  tags:
+    - infra
+    - infra:postgres
+    - infra:db
+
+- import_tasks: postgres_databases.yml
+  tags:
+    - infra
+    - infra:postgres
+    - infra:postgres:databases
+    - infra:db
 
 - import_tasks: authentik.yml
   tags:

@@ -35,4 +35,5 @@
         logs-app.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/logs-app.json') | string }}"
         logs-overview.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/logs-overview.json') | string }}"
         cloudnative-pg.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/cloudnative-pg.json') | string }}"
+        argocd.json: "{{ lookup('file', playbook_dir + '/../roles/07_monitoring/grafana/files/dashboards/argocd.json') | string }}"
   when: deploy_grafana | bool

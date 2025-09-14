@@ -40,25 +40,12 @@ redis:
         cpu: 100m
         memory: 128Mi
 
-{% if groups['master'] | length <= 1 %}
-# Single node configuration
+# Disable embedded PostgreSQL - using central database
 postgresql-ha:
   enabled: false
 
 postgresql:
-  enabled: true
-  global:
-    postgresql:
-      auth:
-        database: gitea
-        username: gitea
-        password: "{{ vault_vault_gitea_postgresql_password }}"
-        postgresPassword: "{{ vault_vault_gitea_postgresql_password }}"
-  primary:
-    persistence:
-      enabled: true
-      size: 10Gi
-      storageClass: longhorn
+  enabled: false
 
 gitea:
   admin:
@@ -79,10 +66,10 @@ gitea:
       SSH_DOMAIN: git.{{ domain }}
     database:
       DB_TYPE: postgres
-      HOST: gitea-postgresql.gitea.svc.cluster.local:5432
+      HOST: postgres-cluster-pooler.dbs.svc.cluster.local:5432
       NAME: gitea
       USER: gitea
-      PASSWD: "{{ vault_vault_gitea_postgresql_password }}"
+      PASSWD: "{{ vault_gitea_db_password }}"
     cache:
       ADAPTER: redis
       HOST: gitea-redis-master.gitea.svc.cluster.local:6379
@@ -99,60 +86,3 @@ gitea:
       REPO_INDEXER_ENABLED: true
     log:
       LEVEL: debug
-
-{% else %}
-# High-availability configuration
-
-postgresql-ha:
-  enabled: true
-  global:
-    postgresql:
-      database: gitea
-      username: gitea
-      password: "{{ vault_gitea_postgresql_password }}"
-  postgresql:
-    repmgrPassword: "{{ vault_gitea_repmgr_password }}"
-    postgresPassword: "{{ vault_gitea_postgresql_password }}"
-    password: "{{ vault_gitea_postgresql_password }}"
-  pgpool:
-    adminPassword: "{{ vault_gitea_pgpool_password }}"
-  service:
-    ports:
-      postgresql: 5432
-  persistence:
-    size: 10Gi
-    storageClass: longhorn
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            labelSelector:
-              matchLabels:
-                app.kubernetes.io/name: postgresql-ha
-            topologyKey: kubernetes.io/hostname
-gitea:
-  admin:
-    existingSecret: gitea-admin-secret
-{% if deploy_authentik %}
-  oauth:
-    - name: "authentik"
-      provider: "openidConnect"
-      existingSecret: gitea-authentik-secret
-      autoDiscoverUrl: "https://authentik.{{ domain }}/application/o/gitea/.well-known/openid-configuration"
-      iconUrl: https://authentik.{{ domain }}/static/dist/assets/icons/icon.svg
-      scopes: "email profile"
-{% endif %}
-  config:
-    server:
-      ROOT_URL: "https://git.{{ domain }}"
-      DOMAIN: git.{{ domain }}
-      SSH_DOMAIN: git.{{ domain }}
-    oauth2_client:
-      ENABLE_AUTO_REGISTRATION: true
-    indexer:
-      ISSUE_INDEXER_TYPE: bleve
-      REPO_INDEXER_ENABLED: true
-    log:
-      LEVEL: debug
-{% endif %}

@@ -1,0 +1,23 @@
+---
+- name: Deploy cloudnative-pg
+  block:
+    - name: Fetch cloudnative-pg Helm chart information
+      kubernetes.core.helm_info:
+        name: cloudnative-pg
+        release_namespace: cnpg-system
+      register: cloudnative_pg_helm_info
+      ignore_errors: true
+
+    - name: Deploy or upgrade cloudnative-pg
+      kubernetes.core.helm:
+        name: cloudnative-pg
+        chart_ref: cloudnative-pg/cloudnative-pg
+        chart_version: "{{ cnpg_version }}"
+        release_namespace: cnpg-system
+        create_namespace: true
+        values: "{{ lookup('template', 'values-cnpg.yml.j2') | from_yaml }}"
+        wait: true
+        wait_timeout: 5m
+      register: cloudnative_pg_deploy
+      retries: 3
+      delay: 30

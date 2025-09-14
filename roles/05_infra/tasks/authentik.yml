@@ -55,11 +55,13 @@
         headers:
           Authorization: "Bearer {{ vault_authentik_api_token }}"
           Content-Type: "application/json"
+        timeout: 60
+        validate_certs: true
         return_content: true
       register: flow_instances_response
       until: flow_instances_response.status == 200
-      retries: 10
-      delay: 30
+      retries: 5
+      delay: 15
       changed_when: false
       failed_when: flow_instances_response.status not in [200]
 
@@ -85,13 +87,14 @@
           Authorization: "Bearer {{ vault_authentik_api_token }}"
           Content-Type: "application/json"
           Accept: "application/json"
+        timeout: 60
         return_content: true
         validate_certs: true
         status_code: [200]
       register: scope_mappings_response
       until: scope_mappings_response.status == 200
       retries: 6
-      delay: 10
+      delay: 15
       changed_when: false
       failed_when:
         - scope_mappings_response.status != 200
@@ -131,10 +134,12 @@
         headers:
           Authorization: "Bearer {{ vault_authentik_api_token }}"
           Content-Type: "application/json"
+        timeout: 60
         return_content: true
+        validate_certs: true
       register: all_flows_response
       until: all_flows_response.status == 200
-      retries: 3
+      retries: 10
       delay: 10
       changed_when: false
       failed_when: all_flows_response.status not in [200]
@@ -161,7 +166,9 @@
         headers:
           Authorization: "Bearer {{ vault_authentik_api_token }}"
           Content-Type: "application/json"
+        timeout: 60
         return_content: true
+        validate_certs: true
       register: existing_cert_keypairs
       until: existing_cert_keypairs.status == 200
       retries: 3

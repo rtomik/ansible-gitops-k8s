@@ -11,6 +11,10 @@ authentik:
   bootstrap_token: "{{ vault_authentik_api_token }}"
   bootstrap_email: "{{ email }}"
   bootstrap_password: "{{ vault_authentik_user_password }}"
+  postgresql:
+    host: postgres-cluster-pooler.dbs.svc.cluster.local
+    user: file:///postgres-creds/username
+    password: file:///postgres-creds/password
 
 server:
   ingress:
@@ -25,11 +29,24 @@ server:
     tls:
       - hosts:
         - authentik.{{ domain }}
+  volumes:
+    - name: postgres-creds
+      secret:
+        secretName: authentik-db-credentials
+  volumeMounts:
+    - name: postgres-creds
+      mountPath: /postgres-creds
+      readOnly: true        
 
-postgresql:
-  enabled: true
-  auth:
-      password: "{{ vault_authentik_postgresql_password }}"
+worker:
+  volumes:
+    - name: postgres-creds
+      secret:
+        secretName: authentik-db-credentials
+  volumeMounts:
+    - name: postgres-creds
+      mountPath: /postgres-creds
+      readOnly: true
 
 redis:
     enabled: true
