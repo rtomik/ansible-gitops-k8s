@@ -83,8 +83,8 @@ app_definitions:
     enabled: "{{ deploy_paperless_ngx }}"
     chart_name: "paperless-ngx"
     version: "{{ paperless_ngx_version }}"
-    repo: "https://charts.gabe565.com"
-    namespace: "paperless-ngx"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "apps"
   recipya:
     enabled: "{{ deploy_recipya }}"
     chart_name: "recipya"
