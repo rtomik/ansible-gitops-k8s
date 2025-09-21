@@ -73,6 +73,13 @@
     - infra:postgres:databases
     - infra:db
 
+- import_tasks: dragonfly.yml
+  tags:
+    - infra
+    - infra:dragonfly
+    - infra:cache
+    - infra:db
+
 - import_tasks: authentik.yml
   tags:
     - infra

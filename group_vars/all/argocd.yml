@@ -157,6 +157,12 @@ app_definitions:
     version: "{{ joplin_server_version }}"
     repo: "https://rtomik.github.io/helm-charts"
     namespace: "apps"
+  home-assistant:
+    enabled: "{{ deploy_homeassistant }}"
+    chart_name: "home-assistant"
+    version: "{{ homeassistant_version }}"
+    repo: "http://pajikos.github.io/home-assistant-helm-chart"
+    namespace: "apps"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |

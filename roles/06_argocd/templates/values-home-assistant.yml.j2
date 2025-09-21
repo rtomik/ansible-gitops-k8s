@@ -1,0 +1,43 @@
+home-assistant:
+  controller:
+    type: Deployment
+
+  env:
+    - name: TZ
+      value: "{{ timezone }}"
+
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+    hosts:
+      - host: home.{{ domain }}
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls:
+      - hosts:
+          - home.{{ domain }}
+
+  persistence:
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    storageClass: "longhorn"
+    annotations:
+      longhorn.io/backup: "true"
+
+  configuration:
+    enabled: true
+    trusted_proxies:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 10.42.0.0/16
+
+
+  serviceMonitor:
+    # requires HA integration:  https://www.home-assistant.io/integrations/prometheus/
+    enabled: true

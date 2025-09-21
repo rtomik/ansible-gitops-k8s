@@ -1,0 +1,168 @@
+---
+- name: Deploy Dragonfly Operator
+  when: deploy_dragonfly | default(true) | bool
+  block:
+    - name: Download Dragonfly Operator manifest
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml"
+        dest: "/tmp/dragonfly-operator.yaml"
+        mode: '0644'
+
+    - name: Apply Dragonfly Operator manifest
+      ansible.builtin.shell: |
+        kubectl apply -f /tmp/dragonfly-operator.yaml
+      register: dragonfly_operator_result
+      changed_when: "'created' in dragonfly_operator_result.stdout or 'configured' in dragonfly_operator_result.stdout"
+
+    - name: Clean up downloaded manifest
+      ansible.builtin.file:
+        path: "/tmp/dragonfly-operator.yaml"
+        state: absent
+
+    - name: Wait for Dragonfly Operator to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: dragonfly-operator-controller-manager
+        namespace: dragonfly-operator-system
+        wait: true
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+
+- name: Deploy Central Dragonfly Cache Cluster
+  when: deploy_dragonfly | default(true) | bool
+  block:
+    - name: Create Dragonfly namespace
+      kubernetes.core.k8s:
+        name: "{{ dragonfly.namespace | default('dbs') }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create Dragonfly auth secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}-auth"
+            namespace: "{{ dragonfly.namespace | default('dbs') }}"
+          type: Opaque
+          data:
+            password: "{{ dragonfly.password | default(vault_dragonfly_password) | b64encode }}"
+      when: dragonfly.auth.enabled | default(true) | bool
+
+    - name: Deploy Dragonfly cluster
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          {
+            "apiVersion": "dragonflydb.io/v1alpha1",
+            "kind": "Dragonfly",
+            "metadata": {
+              "name": "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}",
+              "namespace": "{{ dragonfly.namespace | default('dbs') }}"
+            },
+            "spec": {
+              "replicas": {{ dragonfly.replicas | default(3) | int }},
+              "resources": {
+                "requests": {
+                  "cpu": "{{ dragonfly.resources.requests.cpu | default('100m') }}",
+                  "memory": "{{ dragonfly.resources.requests.memory | default('128Mi') }}"
+                },
+                "limits": {
+                  "cpu": "{{ dragonfly.resources.limits.cpu | default('500m') }}",
+                  "memory": "{{ dragonfly.resources.limits.memory | default('512Mi') }}"
+                }
+              },
+              "args": [
+                "--maxmemory={{ dragonfly.config.maxmemory | default('256mb') }}",
+                "--proactor_threads={{ dragonfly.config.proactor_threads | default('2') }}",
+                "--cluster_mode={{ dragonfly.config.cluster_mode | default('emulated') }}"
+                {% if dragonfly.auth.enabled | default(true) | bool %},
+                "--requirepass=$(DRAGONFLY_PASSWORD)"
+                {% endif %}
+                {% if dragonfly.persistence.enabled | default(true) | bool %},
+                "--dir=/data",
+                "--dbfilename=dump",
+                "--snapshot_cron={{ dragonfly.persistence.save_schedule | default('*/30 * * * *') }}"
+                {% endif %}
+              ]
+              {% if dragonfly.auth.enabled | default(true) | bool %},
+              "env": [
+                {
+                  "name": "DRAGONFLY_PASSWORD",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "name": "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}-auth",
+                      "key": "password"
+                    }
+                  }
+                }
+              ]
+              {% endif %}
+              {% if dragonfly.persistence.enabled | default(true) | bool %},
+              "volumeClaimTemplates": [
+                {
+                  "metadata": {
+                    "name": "data"
+                  },
+                  "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "storageClassName": "{{ dragonfly.persistence.storage_class | default('longhorn') }}",
+                    "resources": {
+                      "requests": {
+                        "storage": "{{ dragonfly.persistence.size | default('10Gi') }}"
+                      }
+                    }
+                  }
+                }
+              ]
+              {% endif %},
+              "serviceSpec": {
+                "type": "ClusterIP",
+                "ports": [
+                  {
+                    "port": 6379,
+                    "name": "dragonfly",
+                    "protocol": "TCP",
+                    "targetPort": 6379
+                  }
+                ]
+              }
+            }
+          }
+
+    - name: Wait for Dragonfly cluster to be ready
+      kubernetes.core.k8s_info:
+        api_version: dragonflydb.io/v1alpha1
+        kind: Dragonfly
+        name: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}"
+        namespace: "{{ dragonfly.namespace | default('dbs') }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 600
+
+    - name: Create Dragonfly connection secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: dragonfly-connection
+            namespace: "{{ dragonfly.namespace | default('dbs') }}"
+            labels:
+              app: dragonfly
+              component: cache
+          type: Opaque
+          data:
+            host: "{{ (dragonfly.cluster_name | default('dragonfly-cluster') + '.' + dragonfly.namespace | default('dbs') + '.svc.cluster.local') | b64encode }}"
+            port: "{{ '6379' | b64encode }}"
+            password: "{{ (dragonfly.password | default(vault_dragonfly_password)) | b64encode if (dragonfly.auth.enabled | default(true)) else '' | b64encode }}"
+            connection_string: "{{ ('redis://' + ('default:' + dragonfly.password | default(vault_dragonfly_password) + '@' if (dragonfly.auth.enabled | default(true)) else '') + dragonfly.cluster_name | default('dragonfly-cluster') + '.' + dragonfly.namespace | default('dbs') + '.svc.cluster.local:6379') | b64encode }}"

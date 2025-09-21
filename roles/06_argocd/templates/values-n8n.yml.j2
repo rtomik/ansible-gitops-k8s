@@ -1,5 +1,19 @@
-# default values https://community-charts.github.io/helm-charts
+
 n8n:
+  db:
+    type: postgresdb
+
+  externalPostgresql:
+    host: "postgres-cluster-pooler.dbs.svc.cluster.local"
+    username: "n8n_user"
+    database: "n8n"
+    password: "{{ vault_n8n_db_password }}"
+
+  externalRedis:
+    host: "dragonfly-cluster.dbs.svc.cluster.local"
+    username: "default"
+    password: "{{ vault_dragonfly_password }}"
+
   ingress:
     enabled: true
     className: traefik
@@ -21,10 +35,29 @@ n8n:
       storageClass: longhorn
 
     resources:
-      limits:
-        cpu: 1000m
-        memory: 2Gi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 512m
+        memory: 512Mi
 
+  worker:
+    mode: queue
+
+    autoscaling:
+      enabled: true
+
+    waitMainNodeReady:
+      enabled: true
+
+  webhook:
+    mode: queue
+
+    url: "https://webhook.{{ domain }}"
+
+    autoscaling:
+      enabled: true
+
+    waitMainNodeReady:
+      enabled: true

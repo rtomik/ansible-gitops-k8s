@@ -49,7 +49,7 @@
             default-src 'self';
             script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:;
             style-src 'self' 'unsafe-inline';
-            img-src 'self' data: blob: https://image.tmdb.org;
+            img-src 'self' data: blob: https://image.tmdb.org https://brands.home-assistant.io;
             font-src 'self' data:;
             connect-src 'self' ws: wss: https://sentry.servarr.com;
             worker-src 'self' blob:;

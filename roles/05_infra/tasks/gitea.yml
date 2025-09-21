@@ -16,21 +16,6 @@
             username: "{{ 'admin' | b64encode }}"
             password: "{{ vault_gitea_admin_password | b64encode }}"
 
-    - name: Create Gitea postgresql credentials secret
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: gitea-postgresql-secret
-            namespace: gitea
-          type: Opaque
-          data:
-            postgresql-password: "{{ vault_gitea_postgresql_password | b64encode }}"
-            repmgr-password: "{{ vault_gitea_repmgr_password | b64encode }}"
-            pgpool-password: "{{ vault_gitea_pgpool_password | b64encode }}"
-
     - name: Fetch Gitea Helm chart information
       kubernetes.core.helm_info:
         name: gitea
