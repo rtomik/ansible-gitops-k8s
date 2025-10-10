@@ -25,20 +25,11 @@ persistence:
 redis-cluster:
   enabled: false
 
+valkey-cluster:
+  enabled: false
+
 redis:
-  enabled: true
-  architecture: standalone
-  auth:
-    enabled: false
-  master:
-    persistence:
-      enabled: true
-      storageClass: longhorn
-      size: 8Gi
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
+  enabled: false
 
 # Disable embedded PostgreSQL - using central database
 postgresql-ha:
@@ -72,13 +63,13 @@ gitea:
       PASSWD: "{{ vault_gitea_db_password }}"
     cache:
       ADAPTER: redis
-      HOST: gitea-redis-master.gitea.svc.cluster.local:6379
+      HOST: network=tcp,addr={{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379,password={{ dragonfly.password | default(vault_dragonfly_password) }},db=0,pool_size=100,idle_timeout=180
     session:
       PROVIDER: redis
-      PROVIDER_CONFIG: gitea-redis-master.gitea.svc.cluster.local:6379
+      PROVIDER_CONFIG: network=tcp,addr={{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379,password={{ dragonfly.password | default(vault_dragonfly_password) }},db=1,pool_size=100,idle_timeout=180
     queue:
       TYPE: redis
-      CONN_STR: redis://gitea-redis-master.gitea.svc.cluster.local:6379/0
+      CONN_STR: redis://:{{ dragonfly.password | default(vault_dragonfly_password) }}@{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379/2
     oauth2_client:
       ENABLE_AUTO_REGISTRATION: true
     indexer:

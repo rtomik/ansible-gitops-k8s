@@ -192,14 +192,28 @@
         state: directory
         mode: '0700'
 
-    - name: Update kubeconfig on all master nodes
+    - name: Wait for kubeconfig to be available
+      ansible.builtin.stat:
+        path: /etc/rancher/rke2/rke2.yaml
+      register: kubeconfig_stat
+      until: kubeconfig_stat.stat.exists
+      retries: 30
+      delay: 10
+
+    - name: Update kubeconfig on secondary master nodes
       ansible.builtin.copy:
-        content: "{{ hostvars[groups['master'][0]]['rke2_kubeconfig']['content'] | b64decode | replace('https://127.0.0.1:6443', 'https://' + kube_vip_address + ':6443') }}"
-        dest: "/root/.kube/config"
+        src: /etc/rancher/rke2/rke2.yaml
+        dest: /root/.kube/config
+        remote_src: true
         mode: '0600'
         owner: root
         group: root
-      when: inventory_hostname in groups['master']
+
+    - name: Replace localhost with VIP in kubeconfig
+      ansible.builtin.replace:
+        path: /root/.kube/config
+        regexp: 'https://127\.0\.0\.1:6443'
+        replace: 'https://{{ kube_vip_address }}:6443'
 
     - name: Wait for node to be Ready in Kubernetes
       kubernetes.core.k8s_info:

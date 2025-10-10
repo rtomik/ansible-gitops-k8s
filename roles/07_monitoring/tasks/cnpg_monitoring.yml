@@ -48,10 +48,6 @@
           matchLabels:
             app.kubernetes.io/name: cloudnative-pg
   when: deploy_cnpg and deploy_prometheus and servicemonitor_crd.resources | length > 0
-  tags:
-    - infra
-    - infra:cnpg
-    - infra:monitoring
 
 - name: Check if PodMonitor CRD exists
   kubernetes.core.k8s_info:
@@ -80,7 +76,3 @@
             path: /metrics
             interval: 30s
   when: deploy_cnpg and deploy_prometheus and podmonitor_crd.resources | length > 0
-  tags:
-    - infra
-    - infra:cnpg
-    - infra:monitoring
