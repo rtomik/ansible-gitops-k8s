@@ -230,4 +230,3 @@
               name: "{{ postgresql.cluster_name }}"
             owner: "{{ item.value.username }}"
       loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
-

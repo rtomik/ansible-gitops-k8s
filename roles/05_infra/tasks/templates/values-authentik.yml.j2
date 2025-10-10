@@ -13,6 +13,9 @@ authentik:
     host: postgres-cluster-pooler.dbs.svc.cluster.local
     user: file:///postgres-creds/username
     password: file:///postgres-creds/password
+  redis:
+    host: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
+    password: "{{ dragonfly.password | default(vault_dragonfly_password) }}"
 
 server:
   ingress:
@@ -54,7 +57,7 @@ worker:
     periodSeconds: 20
 
 redis:
-    enabled: true
+  enabled: false
 
 postgresql:
   enabled: false

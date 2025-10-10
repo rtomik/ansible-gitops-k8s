@@ -142,11 +142,12 @@
         kind: Dragonfly
         name: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}"
         namespace: "{{ dragonfly.namespace | default('dbs') }}"
-        wait: true
-        wait_condition:
-          type: Ready
-          status: "True"
-        wait_timeout: 600
+      register: dragonfly_status
+      until: >
+        dragonfly_status.resources | length > 0 and
+        dragonfly_status.resources[0].status.phase | default('') == 'Ready'
+      retries: 60
+      delay: 10
 
     - name: Create Dragonfly connection secret
       kubernetes.core.k8s:
@@ -162,7 +163,14 @@
               component: cache
           type: Opaque
           data:
-            host: "{{ (dragonfly.cluster_name | default('dragonfly-cluster') + '.' + dragonfly.namespace | default('dbs') + '.svc.cluster.local') | b64encode }}"
+            host: >-
+              {{ (dragonfly.cluster_name | default('dragonfly-cluster') + '.' +
+              dragonfly.namespace | default('dbs') + '.svc.cluster.local') | b64encode }}
             port: "{{ '6379' | b64encode }}"
-            password: "{{ (dragonfly.password | default(vault_dragonfly_password)) | b64encode if (dragonfly.auth.enabled | default(true)) else '' | b64encode }}"
-            connection_string: "{{ ('redis://' + ('default:' + dragonfly.password | default(vault_dragonfly_password) + '@' if (dragonfly.auth.enabled | default(true)) else '') + dragonfly.cluster_name | default('dragonfly-cluster') + '.' + dragonfly.namespace | default('dbs') + '.svc.cluster.local:6379') | b64encode }}"
+            password: >-
+              {{ (dragonfly.password | default(vault_dragonfly_password)) | b64encode
+              if (dragonfly.auth.enabled | default(true)) else '' | b64encode }}
+            connection_string: >-
+              {{ ('redis://' + ('default:' + dragonfly.password | default(vault_dragonfly_password) + '@'
+              if (dragonfly.auth.enabled | default(true)) else '') + dragonfly.cluster_name | default('dragonfly-cluster') +
+              '.' + dragonfly.namespace | default('dbs') + '.svc.cluster.local:6379') | b64encode }}
