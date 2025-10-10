@@ -14,6 +14,25 @@ jellyfin:
       - hosts:
           - jellyfin.{{ domain }}
 
+
+  livenessProbe:
+    initialDelaySeconds: 15
+    tcpSocket:
+      port: http
+      successThreshold: 1
+      failureThreshold: 10
+      timeoutSeconds: 5
+      periodSeconds: 15
+
+  readinessProbe:
+    initialDelaySeconds: 15
+    tcpSocket:
+      port: http
+      successThreshold: 1
+      failureThreshold: 10
+      timeoutSeconds: 10
+      periodSeconds: 15
+
   podSecurityContext:
 {% if jellyfin_hw.enabled %}
     fsGroup: 104  # Changed from 0 to 104 for video group access
@@ -41,6 +60,26 @@ jellyfin:
   volumeMounts:
     - name: jellyfin-hardware
       mountPath: {{ jellyfin_hw.path }}
+
+{% if jellyfin_hw.scheduling_enabled | default(true) %}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+{% if jellyfin_hw.nodes is defined %}
+{% for node in jellyfin_hw.nodes %}
+            - {{ node }}
+{% endfor %}
+{% elif jellyfin_hw.node is defined %}
+            - {{ jellyfin_hw.node }}
+{% else %}
+            - master-01
+{% endif %}
+{% endif %}
 {% endif %}
 
   persistence:

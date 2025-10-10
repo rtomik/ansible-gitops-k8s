@@ -2,7 +2,7 @@
 - name: Configure SFTP External Storage for Kubernetes
   when:
     - external_storage.enabled | default(false) | bool
-    - external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+    - external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
   block:
     # Phase 1: SSH Key Generation
     - name: Create SSH key directory
@@ -21,7 +21,7 @@
         comment: "k8s-{{ inventory_hostname_short }}-{{ item.name }}-{{ ansible_date_time.date }}"
         regenerate: "{{ item.sftp.regenerate_key | default('never') }}"
         state: present
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
       delegate_to: localhost
       run_once: true
 
@@ -39,7 +39,7 @@
         ls -la {{ item.sftp.path | default('.') }}
         quit
         EOF
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
       register: sftp_test_results
       delegate_to: localhost
       run_once: true
@@ -63,7 +63,7 @@
         echo "$PUB_KEY" | sshpass -p "{{ item.item.sftp.password }}" ssh \
           -o StrictHostKeyChecking=accept-new \
           -o ConnectTimeout=15 \
-          -p {{ item.item.ssh.port | default('23') }} \
+          -p {{ item.item.sftp.ssh_port | default('23') }} \
           {{ item.item.sftp.user }}@{{ item.item.server }} \
           "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
         {% endif %}
@@ -110,7 +110,7 @@
         ls -la {{ item.sftp.path | default('.') }}
         quit
         EOF
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
       register: final_sftp_tests
       delegate_to: localhost
       run_once: true
@@ -135,7 +135,7 @@
     - name: Generate known_hosts entries
       ansible.builtin.command:
         cmd: ssh-keyscan -p {{ item.sftp.port | default('22') }} {{ item.server }}
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
       register: known_hosts_scan
       delegate_to: localhost
       run_once: true
@@ -144,7 +144,7 @@
     - name: Read SSH private keys
       ansible.builtin.slurp:
         src: "{{ playbook_dir }}/ssh-keys/{{ item.name }}_rsa"
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
       register: ssh_private_keys
       delegate_to: localhost
       run_once: true
@@ -269,7 +269,7 @@
                   secret:
                     secretName: "{{ item.name }}-ssh-secret"
                     defaultMode: 0600
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
 
     - name: Create PersistentVolumes for SFTP storage
       kubernetes.core.k8s:
@@ -292,7 +292,7 @@
             hostPath:
               path: /mnt/{{ item.name }}-storage
               type: Directory
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
 
     - name: Create namespaces for applications requiring SFTP storage
       kubernetes.core.k8s:
@@ -312,7 +312,7 @@
       when: 
         - external_storage.applications is defined
         - item.value.enabled | bool
-        - external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+        - external_storage.backends | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
 
     - name: Create PVCs for SFTP applications
       kubernetes.core.k8s:
@@ -330,7 +330,7 @@
               app.kubernetes.io/managed-by: ansible
           spec:
             accessModes:
-              - "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='access_mode') | first | default('ReadWriteMany') }}"
+              - "{{ external_storage.backends | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='access_mode') | first | default('ReadWriteMany') }}"
             resources:
               requests:
                 storage: "{{ item.value.size | default('1Gi') }}"
@@ -342,7 +342,7 @@
       loop_control:
         label: "{{ item.key }}"
       vars:
-        matching_storage: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('name', 'equalto', item.value.storage_name) | selectattr('type', 'equalto', 'sftp') | list }}"
+        matching_storage: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('name', 'equalto', item.value.storage_name) | selectattr('type', 'equalto', 'sftp') | list }}"
       when:
         - external_storage.applications is defined
         - item.value.enabled | bool
@@ -365,7 +365,7 @@
       when:
         - external_storage.applications is defined
         - item.value.enabled | bool
-        - external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
+        - external_storage.backends | selectattr('name', 'equalto', item.value.storage_name) | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list | length > 0
       register: pvc_binding_status
 
     # Phase 8: Display setup summary
@@ -378,7 +378,7 @@
           📁 SSH Keys: {{ playbook_dir }}/ssh-keys/
           
           📊 Configured Storage:
-          {% for storage in external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') %}
+          {% for storage in external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') %}
           📦 {{ storage.name }}:
              🏠 Server: {{ storage.server }}:{{ storage.sftp.port | default('22') }}
              👤 User: {{ storage.sftp.user }}

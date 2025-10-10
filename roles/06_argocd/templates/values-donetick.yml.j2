@@ -22,6 +22,21 @@ donetick:
     annotations: {}          
   
   config:
+
+    database:
+      type: "postgres"
+      migration: false
+
+      # These are only required for postgres - direct configuration
+      host: "postgres-cluster-pooler.dbs.svc.cluster.local"
+      port: 5432
+      name: "donetick"
+
+      secrets:
+        existingSecret: "donetick-db-credentials"
+        userKey: "username"       
+        passwordKey: "password"      
+
     jwt:
       secretKey: "jwtSecret" # The key in the secret where JWT secret is stored
       secret: "FXJCM0ldr5F53z67qq7QoL5ZOlbSCIXAIPvYDZy" # Only used if existingSecret is not set

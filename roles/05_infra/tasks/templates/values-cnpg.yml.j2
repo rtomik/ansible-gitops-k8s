@@ -1,4 +1,6 @@
 # default values https://github.com/cloudnative-pg/charts/blob/main/charts/cloudnative-pg/values.yaml
 
-monitoring:
-  podMonitorEnabled: true
+replicaCount: 1
+
+serviceAccount:
+  create: true

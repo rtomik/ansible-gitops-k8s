@@ -28,7 +28,7 @@
               repository: registry.k8s.io/sig-storage/csi-provisioner
               tag: v5.0.1
             csiAttacher:
-              repository: registry.k8s.io/sig-storage/csi-attacher 
+              repository: registry.k8s.io/sig-storage/csi-attacher
               tag: v4.6.1
             csiResizer:
               repository: registry.k8s.io/sig-storage/csi-resizer
@@ -42,7 +42,7 @@
             smb:
               repository: registry.k8s.io/sig-storage/smbplugin
               tag: v1.18.0
-      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
+      when: external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
 
     - name: Store SMB credentials in secret
       kubernetes.core.k8s:
@@ -57,10 +57,29 @@
           stringData:
             username: "{{ item.smb.user }}"
             password: "{{ item.smb.password }}"
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
       loop_control:
         label: "{{ item.name }}"
-      when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
+      when: external_storage.backends | selectattr('type', 'equalto', 'smb') | list | length > 0
+
+    # SFTP configuration
+    - name: Store SFTP credentials in secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ item.name }}-secret"
+            namespace: external-storage
+          type: Opaque
+          stringData:
+            username: "{{ item.sftp.user }}"
+            password: "{{ item.sftp.password }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'sftp') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: external_storage.backends | selectattr('type', 'equalto', 'sftp') | list | length > 0
 
     # NFS configuration
     - name: Install NFS CSI Driver
@@ -72,9 +91,9 @@
         release_namespace: kube-system
         values:
           nfs:
-            server: "{{ external_storage.nas | selectattr('type', 'equalto', 'nfs') | map(attribute='server') | first | default('') }}"
-            path: "{{ external_storage.nas | selectattr('type', 'equalto', 'nfs') | map(attribute='nfs.path') | first | default('') }}"
-      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'nfs') | list | length > 0
+            server: "{{ external_storage.backends | selectattr('type', 'equalto', 'nfs') | map(attribute='server') | first | default('') }}"
+            path: "{{ external_storage.backends | selectattr('type', 'equalto', 'nfs') | map(attribute='nfs.path') | first | default('') }}"
+      when: external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'nfs') | list | length > 0
 
     # Create storage classes - separated by type
     - name: Delete existing SMB Storage Classes to recreate with correct parameters
@@ -83,16 +102,18 @@
         api_version: storage.k8s.io/v1
         kind: StorageClass
         name: "{{ item.storage_class }}"
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
+      loop: "{{ external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
       loop_control:
         label: "{{ item.name }}"
-      when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
-      ignore_errors: true
+      when:
+        - external_storage.backends | selectattr('type', 'equalto', 'smb') | list | length > 0
+        - item.storage_class is defined
+      failed_when: false
 
     - name: Wait for SMB StorageClass deletion
       ansible.builtin.pause:
         seconds: 5
-      when: external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
+      when: external_storage.backends | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list | length > 0
 
     - name: Create Storage Classes for SMB
       kubernetes.core.k8s:
@@ -113,10 +134,14 @@
             csi.storage.k8s.io/node-stage-secret-namespace: "external-storage"
             csi.storage.k8s.io/provisioner-secret-name: "{{ item.name }}-secret"
             csi.storage.k8s.io/provisioner-secret-namespace: "external-storage"
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'smb') | list }}"
+      loop: >-
+        {{ external_storage.backends | selectattr('enabled', 'equalto', true)
+           | selectattr('type', 'equalto', 'smb') | list }}
       loop_control:
         label: "{{ item.name }}"
-      when: external_storage.nas | selectattr('type', 'equalto', 'smb') | list | length > 0
+      when:
+        - external_storage.backends | selectattr('type', 'equalto', 'smb') | list | length > 0
+        - item.storage_class is defined
 
     - name: Create Storage Classes for NFS
       kubernetes.core.k8s:
@@ -135,10 +160,46 @@
             server: "{{ item.server }}"
             path: "{{ item.nfs.path }}"
             mountOptions: "{{ item.nfs.mount_options | default('nfsvers=4.1') }}"
-      loop: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('type', 'equalto', 'nfs') | list }}"
+      loop: >-
+        {{ external_storage.backends | selectattr('enabled', 'equalto', true)
+           | selectattr('type', 'equalto', 'nfs') | list }}
       loop_control:
         label: "{{ item.name }}"
-      when: external_storage.nas | selectattr('type', 'equalto', 'nfs') | list | length > 0
+      when:
+        - external_storage.backends | selectattr('type', 'equalto', 'nfs') | list | length > 0
+        - item.storage_class is defined
+
+    - name: Create Storage Classes for SFTP
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: "{{ item.storage_class }}"
+            labels:
+              storage-type: sftp
+          provisioner: "fuse.csi.k8s.io"
+          reclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
+          volumeBindingMode: Immediate
+          parameters:
+            fuseMountImage: "{{ item.sftp.image | default('alpine:3.18') }}"
+            fuseMountOptions: >-
+              sftp,
+              user={{ item.sftp.user }},
+              port={{ item.sftp.port | default('22') }},
+              HostKeyAlgorithms=+ssh-rsa,
+              PubkeyAcceptedAlgorithms=+ssh-rsa
+            secretRef: "{{ item.name }}-secret"
+            mountPoint: "{{ item.sftp.path | default('/') }}"
+      loop: >-
+        {{ external_storage.backends | selectattr('enabled', 'equalto', true)
+           | selectattr('type', 'equalto', 'sftp') | list }}
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - external_storage.backends | selectattr('type', 'equalto', 'sftp') | list | length > 0
+        - item.storage_class is defined
 
     - name: Create namespaces for applications that need external storage
       kubernetes.core.k8s:
@@ -156,23 +217,24 @@
         label: "{{ item.key }}"
       when: item.value.enabled | bool
 
-    # Create PVCs for applications
-    - name: Create PVCs for Applications (SMB/NFS)
+    # Create PVCs for applications (only for storage types that need Kubernetes PVCs)
+    - name: Create PVCs for Applications (SMB/NFS/SFTP)
       kubernetes.core.k8s:
         state: present
         definition:
           apiVersion: v1
           kind: PersistentVolumeClaim
           metadata:
-            name: "{{ item.key }}-data"
+            name: "{{ item.value.pvc_name | default(item.key + '-data') }}"
             namespace: "{{ item.value.namespace | default(item.key) }}"
             labels:
               app: "{{ item.key }}"
-              storage-type: "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='type') | first }}"
+              storage-type: "{{ matching_storage[0].type }}"
+              storage-backend: "{{ item.value.storage_name }}"
           spec:
             accessModes:
-              - "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='access_mode') | first | default('ReadWriteMany') }}"
-            storageClassName: "{{ external_storage.nas | selectattr('name', 'equalto', item.value.storage_name) | map(attribute='storage_class') | first }}"
+              - "{{ matching_storage[0].access_mode | default('ReadWriteMany') }}"
+            storageClassName: "{{ matching_storage[0].storage_class }}"
             resources:
               requests:
                 storage: "{{ item.value.size }}"
@@ -180,8 +242,57 @@
       loop_control:
         label: "{{ item.key }}"
       vars:
-        matching_storage: "{{ external_storage.nas | selectattr('enabled', 'equalto', true) | selectattr('name', 'equalto', item.value.storage_name) | list }}"
+        matching_storage: >-
+          {{ external_storage.backends | selectattr('enabled', 'equalto', true)
+             | selectattr('name', 'equalto', item.value.storage_name) | list }}
       when:
         - item.value.enabled | bool
         - matching_storage | length > 0
-        - matching_storage[0].type in ['smb', 'nfs']
+        - matching_storage[0].type in ['smb', 'nfs', 'sftp']
+        - matching_storage[0].storage_class is defined
+
+    # Add support for cloud storage types that don't need PVCs but may need other resources
+    - name: Create secrets for cloud storage backends
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ item.name }}-credentials"
+            namespace: external-storage
+          type: Opaque
+          stringData: |
+            {% if item.type == 's3' %}
+            access_key: "{{ item.s3.credentials.access_key }}"
+            secret_key: "{{ item.s3.credentials.secret_key }}"
+            {% if item.s3.credentials.session_token | default('') != '' %}
+            session_token: "{{ item.s3.credentials.session_token }}"
+            {% endif %}
+            endpoint: "{{ item.s3.endpoint | default('') }}"
+            region: "{{ item.s3.region }}"
+            bucket: "{{ item.s3.bucket }}"
+            {% elif item.type == 'azure' %}
+            {% if item.azure.credentials.connection_string | default('') != '' %}
+            connection_string: "{{ item.azure.credentials.connection_string }}"
+            {% endif %}
+            {% if item.azure.credentials.storage_key | default('') != '' %}
+            storage_account: "{{ item.azure.storage_account }}"
+            storage_key: "{{ item.azure.credentials.storage_key }}"
+            {% endif %}
+            {% if item.azure.credentials.sas_token | default('') != '' %}
+            sas_token: "{{ item.azure.credentials.sas_token }}"
+            {% endif %}
+            container: "{{ item.azure.container }}"
+            {% elif item.type == 'gcs' %}
+            {% if item.gcs.credentials.service_account_json | default('') != '' %}
+            service_account_json: "{{ item.gcs.credentials.service_account_json }}"
+            {% endif %}
+            bucket: "{{ item.gcs.bucket }}"
+            {% endif %}
+      loop: >-
+        {{ external_storage.backends | selectattr('enabled', 'equalto', true)
+           | selectattr('type', 'in', ['s3', 'azure', 'gcs']) | list }}
+      loop_control:
+        label: "{{ item.name }}"
+      when: external_storage.backends | selectattr('type', 'in', ['s3', 'azure', 'gcs']) | list | length > 0

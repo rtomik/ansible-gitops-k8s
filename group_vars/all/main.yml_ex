@@ -7,7 +7,7 @@ lang: en_US.UTF-8 # Change this to your language eg. en_US.UTF-8 used for lubelo
 
 # Define IP for kubevip loadbalancer
 # Free ip in your subnet
-kube_vip_address: "192.168.1.200"
+kube_vip_address: "192.168.0.200"
 
 # --- Domain Configuration --- #
 # Create A record:
@@ -24,7 +24,6 @@ cloudflare:
   enabled: false
   api_token: "{{ vault_cloudflare_token }}"
   tls_secret_name: "wildcard-{{ domain }}-tls"
-
 
 # --- Dragonfly Configuration --- #
 # Dragonfly as Redis-compatible cache with better performance
@@ -61,6 +60,191 @@ dragonfly:
     size: "10Gi"
     storage_class: "longhorn"
     save_schedule: "*/30 * * * *"  # Save every 30 minutes (6-field cron format)
+
+# --- External Storage --- #
+external_storage:
+  enabled: false
+  backends:
+    # SMB/CIFS Example
+    - name: "smb"
+      enabled: false
+      type: "smb"
+      server: "192.168.0.10"
+
+      # SMB specific settings
+      smb:
+        driver_version: "v1.18.0"
+        user: ""
+        password: ""
+        share: ""
+
+      # Storage configuration
+      size: "5Ti"
+      storage_class: "media-storage"
+      reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
+      access_mode: "ReadWriteMany"
+
+    # SMB/CIFS Example
+    - name: "backup"
+      enabled: false
+      type: "smb"
+      server: "192.168.0.10"
+
+      # SMB specific settings
+      smb:
+        driver_version: "v1.18.0"
+        user: ""
+        password: ""
+        share: ""
+
+      # Storage configuration
+      size: "100Gi"
+      storage_class: "media-storage"
+      reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
+      access_mode: "ReadWriteMany"
+
+    # SFTP Example (Hetzner Storage Box)
+    - name: "sftp"
+      enabled: false
+      type: "sftp"
+      server: ".your-storagebox.de"  # Your storage box hostname
+
+      # SFTP specific settings
+      sftp:
+        user: "-sub1"  # Your storage box username
+        port: "22"
+        path: "/media"       # Root path or subdirectory like "/backup"
+        password: "{{ vault_sftp_password }}"
+        ssh_port: "23"
+
+        # Optional settings
+        image: "alpine:3.18"
+        health_check_interval: "30"
+        extra_options:
+          - "cache=yes"
+          - "cache_timeout=60"
+
+      # Storage configuration
+      size: "1Ti"
+      reclaim_policy: "Retain"
+      access_mode: "ReadWriteMany"
+
+    # NFS Example
+    - name: "nfs"
+      enabled: false
+      type: "nfs"
+      server: "192.168.0.10"
+
+      # NFS specific settings
+      nfs:
+        path: "/nfs/media"
+        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
+
+      # Storage configuration
+      size: "5Ti"
+      storage_class: "nfs-wd"
+      reclaim_policy: "Retain"
+      access_mode: "ReadWriteMany"
+
+    # AWS S3
+    - name: "aws-s3"
+      enabled: false
+      type: "s3"
+
+      # S3 configuration
+      s3:
+        bucket: "my-cluster-storage"
+        region: "us-west-2"
+        endpoint: ""  # Leave empty for AWS S3
+        force_path_style: false
+        ssl_verify: true
+
+        # Credentials
+        credentials:
+          access_key: "{{ vault_aws_access_key | default('') }}"
+          secret_key: "{{ vault_aws_secret_key | default('') }}"
+          session_token: "{{ vault_aws_session_token | default('') }}"  # Optional
+
+    # Backblaze B2 (S3-compatible)
+    - name: "backblaze-b2"
+      enabled: false
+      type: "s3"
+
+      # S3 configuration for Backblaze B2
+      s3:
+        bucket: "buckettest357578"
+        region: "us-west-000"
+        endpoint: "https://s3.eu-central-003.backblazeb2.com"
+        force_path_style: true
+        ssl_verify: true
+
+        # Backblaze B2 credentials
+        credentials:
+          access_key: "003c6b74029cca60000000002"
+          secret_key: "{{ vault_backblaze_key }}"
+
+    # Azure Blob Storage
+    - name: "azure-blob"
+      enabled: false
+      type: "azure"
+
+      # Azure configuration
+      azure:
+        container: "storage"
+        storage_account: "{{ vault_azure_storage_account | default('') }}"
+
+        # Azure credentials (use one of the following methods)
+        credentials:
+          # Method 1: Connection string
+          connection_string: "{{ vault_azure_connection_string | default('') }}"
+          # Method 2: Storage account + key
+          storage_key: "{{ vault_azure_storage_key | default('') }}"
+          # Method 3: SAS token
+          sas_token: "{{ vault_azure_sas_token | default('') }}"
+          # Method 4: Azure AD Workload Identity (no credentials needed)
+          inherit_from_azure_ad: false
+
+    # Google Cloud Storage
+    - name: "google-cloud"
+      enabled: false
+      type: "gcs"
+
+      # GCS configuration
+      gcs:
+        bucket: "my-cluster-storage"
+
+        # Authentication methods
+        credentials:
+          # Method 1: Use GKE environment (no credentials needed)
+          gke_environment: false
+          # Method 2: Service account credentials
+          service_account_json: "{{ vault_gcs_service_account_json | default('') }}"
+
+    # MinIO (self-hosted S3-compatible)
+    - name: "minio"
+      enabled: false
+      type: "s3"
+
+      # MinIO configuration
+      s3:
+        bucket: "storage"
+        region: "us-east-1"  # MinIO default region
+        endpoint: "http://minio.minio.svc.cluster.local:9000"
+        force_path_style: true
+        ssl_verify: false  # Set to true if using HTTPS with valid certificates
+
+        credentials:
+          access_key: "{{ vault_minio_access_key | default('') }}"
+          secret_key: "{{ vault_minio_secret_key | default('') }}"
+
+  # Define your applications that need storage
+  applications:
+    qbittorrent:
+      enabled: false
+      storage_name: "smb"  # Must match one of the 'name' fields above
+      namespace: "arr"
+      size: "5Ti"
+      pvc_name: qbittorrent-data
 
 # --- PostgreSQL Configuration --- #
 # CloudNativePG for centralized PostgreSQL database
@@ -170,6 +354,14 @@ postgresql:
       description: "n8n"
       app_namespace: "apps"
       privileges: "ALL"
+    donetick:
+      enabled: "{{ deploy_donetick }}"
+      database_name: "donetick"
+      username: "donetick_user"
+      password: "{{ vault_donetick_db_password | default('placeholder') }}"
+      description: "donetick"
+      app_namespace: "apps"
+      privileges: "ALL"
 
     # Example databases (uncomment and configure when needed):
     # authentik:
@@ -210,82 +402,6 @@ tailscale:
   force_update: false
   extra_routes: []
   tags: []
-
-# --- External Storage --- #
-external_storage:
-  enabled: false
-  nas:
-    # SMB/CIFS Example
-    - name: "smb"
-      enabled: false
-      type: "smb"
-      server: "192.168.1.10"
-
-      # SMB specific settings
-      smb:
-        driver_version: "v1.18.0"
-        user: "media"
-        password: ""
-        share: "media"
-
-      # Storage configuration
-      size: "5Ti"
-      storage_class: "media-storage"
-      reclaim_policy: "Retain"  # Options: Retain, Delete, Recycle
-      access_mode: "ReadWriteMany"
-
-    # SFTP Example (Hetzner Storage Box)
-    - name: "media"
-      enabled: false
-      type: "sftp"
-      server: "u-sub1.your-storagebox.de" 
-
-      # SFTP specific settings
-      ssh:
-        port: "23"
-      sftp:
-        user: "u-sub1"  # Your storage box username
-        port: "22"
-        path: "/media"       # Root path or subdirectory like "/backup"
-        password: "{{ vault_sftp_password }}"
-
-        # Optional settings
-        image: "alpine:3.18"
-        health_check_interval: "30"
-        extra_options:
-          - "cache=yes"
-          - "cache_timeout=60"
-
-      # Storage configuration
-      size: "1Ti"
-      reclaim_policy: "Retain"
-      access_mode: "ReadWriteMany"
-
-    # NFS Example
-    - name: "nfs"
-      enabled: false
-      type: "nfs"
-      server: "192.168.1.10"
-
-      # NFS specific settings
-      nfs:
-        path: "/nfs/media"
-        mount_options: "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2"
-
-      # Storage configuration
-      size: "5Ti"
-      storage_class: "nfs"
-      reclaim_policy: "Retain"
-      access_mode: "ReadWriteMany"
-
-  # Define your applications that need storage
-  applications:
-    qbittorrent:
-      enabled: false
-      storage_name: "smb"  # Must match one of the 'name' fields above
-      namespace: "arr"
-      size: "5Ti"
-      pvc_name: qbittorrent-data
 
 # --- ETCD Backup Configuration --- #
 # Automated etcd database backups for cluster state recovery
@@ -409,11 +525,26 @@ deploy_karakeep: true
 deploy_mealie: true
 deploy_joplin_server: true
 
-# Jellyfin hw acceleration
+# ----- APP Settings --------- #
+
+# --- home-assistant --- #
+# If you want to additional mount to the home assistant pod for example for zigbee gateway
+
+
+# --- Jellyfin hw acceleration --- #
 # More info https://www.johanneskueber.com/posts/hardware_acceleration_kubernets_jellyfin/
 jellyfin_hw:
-  enabled: false
+  enabled: true
   path: /dev/dri
+  # Node scheduling options
+  # Set 'scheduling_enabled' to false to allow scheduling on any node
+  scheduling_enabled: true
+  # Use 'nodes' for multiple allowed nodes or 'node' for single specific node
+  # nodes:
+  #  - master-01
+  #  - master-02
+  # Alternative: single node (comment out 'nodes' above and uncomment below)
+  node: master-01
 
 # --- qbittorrent-vpn --- #
 # If you enabled arr
@@ -455,7 +586,7 @@ vpn:
 # ----- Optional variables --------- #
 
 # RKE2 cluster variables
-rke2_version: "v1.33.4+rke2r1"
+rke2_version: "v1.34.1+rke2r1"
 install_rke2_type: "server"
 kube_vip_version: "v1.0.0"
 rke2_hostname: "rke2.{{ domain }}"
@@ -466,7 +597,7 @@ traefik_version: 34.4.1
 certmanager_version: 1.16.3
 argocd_version: 8.2.7
 longhorn_version: 1.9.1
-authentik_version: 2025.8.1
+authentik_version: 2025.6.4
 rancher_version: 2.12.1
 gitlab_version: 8.8.0
 gitea_version: 12.2.0
@@ -487,7 +618,7 @@ jellyfin_version: 2.3.0
 homepage_version: 2.0.2
 audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
-donetick_version: 1.0.1
+donetick_version: 1.0.3
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.0.1
 recipya_version: 0.0.2

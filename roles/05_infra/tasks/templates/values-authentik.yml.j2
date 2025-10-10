@@ -5,9 +5,7 @@
 authentik:
   secret_key: "{{ vault_authentik_secret_key }}"
   error_reporting:
-      enabled: false
-  postgresql:
-      password: "{{ vault_authentik_postgresql_password }}"
+    enabled: false
   bootstrap_token: "{{ vault_authentik_api_token }}"
   bootstrap_email: "{{ email }}"
   bootstrap_password: "{{ vault_authentik_user_password }}"
@@ -24,7 +22,6 @@ server:
     ingressClassName: traefik
     annotations:
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
-      kubernetes.io/ingress.class: traefik
       traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
     tls:
       - hosts:
@@ -37,6 +34,10 @@ server:
     - name: postgres-creds
       mountPath: /postgres-creds
       readOnly: true        
+  startupProbe:
+    failureThreshold: 70
+    initialDelaySeconds: 30
+    periodSeconds: 20
 
 worker:
   volumes:
@@ -47,6 +48,13 @@ worker:
     - name: postgres-creds
       mountPath: /postgres-creds
       readOnly: true
+  startupProbe:
+    failureThreshold: 70
+    initialDelaySeconds: 30
+    periodSeconds: 20
 
 redis:
     enabled: true
+
+postgresql:
+  enabled: false

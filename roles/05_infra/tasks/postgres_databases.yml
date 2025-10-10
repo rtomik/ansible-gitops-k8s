@@ -67,6 +67,16 @@
               item.value.database_name) | b64encode }}
       loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
 
+    - name: Create application namespaces for database credentials
+      kubernetes.core.k8s:
+        name: "{{ item.value.app_namespace | default(item.key) }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+      loop: "{{ postgresql.databases | dict2items | selectattr('value.enabled', 'boolean') | list }}"
+      loop_control:
+        label: "{{ item.value.app_namespace | default(item.key) }}"
+
     - name: Create database credentials secrets in application namespaces
       kubernetes.core.k8s:
         state: present

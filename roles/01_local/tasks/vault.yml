@@ -31,6 +31,14 @@
         - { name: 'karakeep_nextauth', length: 15 }
         - { name: 'grafana_admin_password', length: 10 }
         - { name: 'dragonfly_password', length: 10 }
+        # Database passwords
+        - { name: 'immich_db_password', length: 15 }
+        - { name: 'mealie_db_password', length: 15 }
+        - { name: 'joplin_db_password', length: 15 }
+        - { name: 'gitea_db_password', length: 15 }
+        - { name: 'paperless_db_password', length: 15 }
+        - { name: 'n8n_db_password', length: 15 }
+        - { name: 'donetick_db_password', length: 15 }
 
       register: generated_tokens
       changed_when: false
@@ -48,6 +56,14 @@
           vault_karakeep_nextauth: "{{ generated_tokens.results[6].stdout }}"
           vault_grafana_admin_password: "{{ generated_tokens.results[7].stdout }}"
           vault_dragonfly_password: "{{ generated_tokens.results[8].stdout }}"
+          # Database passwords
+          vault_immich_db_password: "{{ generated_tokens.results[9].stdout }}"
+          vault_mealie_db_password: "{{ generated_tokens.results[10].stdout }}"
+          vault_joplin_db_password: "{{ generated_tokens.results[11].stdout }}"
+          vault_gitea_db_password: "{{ generated_tokens.results[12].stdout }}"
+          vault_paperless_db_password: "{{ generated_tokens.results[13].stdout }}"
+          vault_n8n_db_password: "{{ generated_tokens.results[14].stdout }}"
+          vault_donetick_db_password: "{{ generated_tokens.results[15].stdout }}"
 
     # Write unencrypted vault file
     - name: Create temporary unencrypted vault file
