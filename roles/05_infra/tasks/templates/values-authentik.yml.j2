@@ -18,6 +18,9 @@ authentik:
     password: "{{ dragonfly.password | default(vault_dragonfly_password) }}"
 
 server:
+  replicas: 1
+  strategy:
+    type: Recreate
   ingress:
     enabled: true
     hosts:
@@ -36,7 +39,7 @@ server:
   volumeMounts:
     - name: postgres-creds
       mountPath: /postgres-creds
-      readOnly: true        
+      readOnly: true
   startupProbe:
     failureThreshold: 70
     initialDelaySeconds: 30

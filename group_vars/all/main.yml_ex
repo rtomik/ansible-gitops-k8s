@@ -586,7 +586,7 @@ vpn:
 # ----- Optional variables --------- #
 
 # RKE2 cluster variables
-rke2_version: "v1.34.1+rke2r1"
+rke2_version: "v1.33.5+rke2r1"
 install_rke2_type: "server"
 kube_vip_version: "v1.0.0"
 rke2_hostname: "rke2.{{ domain }}"
@@ -596,11 +596,11 @@ rke2_hostname: "rke2.{{ domain }}"
 traefik_version: 34.4.1
 certmanager_version: 1.16.3
 argocd_version: 8.2.7
-longhorn_version: 1.9.1
+longhorn_version: 1.9.2
 authentik_version: 2025.6.4
 rancher_version: 2.12.1
 gitlab_version: 8.8.0
-gitea_version: 12.2.0
+gitea_version: 12.4.0
 reflector_version: 7.1.288
 renovate_version: 39.251.0
 wg_easy_version: 0.1.2
@@ -618,7 +618,7 @@ jellyfin_version: 2.3.0
 homepage_version: 2.0.2
 audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
-donetick_version: 1.0.3
+donetick_version: 1.0.4
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.0.1
 recipya_version: 0.0.2

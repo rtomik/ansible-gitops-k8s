@@ -45,6 +45,72 @@
             authentik_admin_pw: "{{ vault_authentik_user_password | b64encode }}"
             authentik_api_token: "{{ vault_authentik_api_token | b64encode }}"
 
+    - name: Wait for Authentik server deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: authentik-server
+        namespace: authentik
+      register: authentik_server_deployment
+      until:
+        - authentik_server_deployment.resources is defined
+        - authentik_server_deployment.resources | length > 0
+        - authentik_server_deployment.resources[0].status.availableReplicas is defined
+        - authentik_server_deployment.resources[0].status.availableReplicas > 0
+        - authentik_server_deployment.resources[0].status.readyReplicas is defined
+        - authentik_server_deployment.resources[0].status.readyReplicas > 0
+      retries: 30
+      delay: 10
+
+    - name: Wait for Authentik worker deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: authentik-worker
+        namespace: authentik
+      register: authentik_worker_deployment
+      until:
+        - authentik_worker_deployment.resources is defined
+        - authentik_worker_deployment.resources | length > 0
+        - authentik_worker_deployment.resources[0].status.availableReplicas is defined
+        - authentik_worker_deployment.resources[0].status.availableReplicas > 0
+        - authentik_worker_deployment.resources[0].status.readyReplicas is defined
+        - authentik_worker_deployment.resources[0].status.readyReplicas > 0
+      retries: 30
+      delay: 10
+
+    - name: Wait for Authentik pods to be fully ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: authentik
+        label_selectors:
+          - app.kubernetes.io/name=authentik
+      register: authentik_pods
+      until:
+        - authentik_pods.resources is defined
+        - authentik_pods.resources | length > 0
+        - authentik_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == authentik_pods.resources | length
+        - authentik_pods.resources | map(attribute='status.containerStatuses') | select('defined') | list | length == authentik_pods.resources | length
+        - authentik_pods.resources | map(attribute='status.containerStatuses') | flatten | selectattr('ready', 'equalto', true) | list | length > 0
+      retries: 30
+      delay: 10
+
+    - name: Wait for Authentik API to respond
+      ansible.builtin.uri:
+        url: "https://authentik.{{ domain }}/api/v3/root/config/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ vault_authentik_api_token }}"
+        timeout: 30
+        validate_certs: true
+        status_code: [200]
+      register: authentik_api_check
+      until: authentik_api_check.status == 200
+      retries: 20
+      delay: 15
+      changed_when: false
+
 - name: Get required variables from authentik to create application
   when: deploy_authentik | bool
   block:

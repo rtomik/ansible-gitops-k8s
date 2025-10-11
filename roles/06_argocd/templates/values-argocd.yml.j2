@@ -2,13 +2,18 @@
 global:
   domain: argocd.{{ domain }}
 
+# Disable built-in Redis and Redis-HA
+redis:
+  enabled: false
+
 redis-ha:
-  enabled: true
-  replicas: {{ [groups['master'] | length, 3] | min }}
-  haproxy:
-    replicas: {{ [groups['master'] | length, 3] | min }}
-    metrics:
-      enabled: true
+  enabled: false
+
+# Configure external Redis (DragonflyDB)
+externalRedis:
+  host: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
+  port: 6379
+  password: "{{ vault_dragonfly_password }}"
 
 controller:
   replicas: 1

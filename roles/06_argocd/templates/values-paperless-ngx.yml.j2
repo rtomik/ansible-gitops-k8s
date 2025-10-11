@@ -60,14 +60,9 @@ paperless-ngx:
   redis:
     external:
       enabled: true
-      host: "dragonfly-sample.default.svc.cluster.local"
+      host: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
       port: 6379
-      database: 0
-      # Use existingSecret for credentials if Redis has auth
-      existingSecret: ""
-      passwordKey: "redis-password"
-      # Or set password directly (leave empty if no auth)
-      password: ""
+      password: "{{ vault_dragonfly_password }}"
 
   config:
     url: https://paperless.tomik.lat
