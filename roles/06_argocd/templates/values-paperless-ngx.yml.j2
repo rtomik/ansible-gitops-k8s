@@ -68,10 +68,14 @@ paperless-ngx:
     url: https://paperless.tomik.lat
     allowedHosts: "*"
 
+  env:
+    - name: PAPERLESS_REDIS
+      value: "redis://:{{ vault_dragonfly_password }}@{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379/0"
 {% if deploy_authentik %}
-  env: 
     - name: PAPERLESS_APPS
       value: "allauth.socialaccount.providers.openid_connect"
+    - name: PAPERLESS_AUTO_CREATE
+      value: true
     - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
       value: |
             {
@@ -89,8 +93,8 @@ paperless-ngx:
                 ],
                 "OAUTH_PKCE_ENABLED": "True"
               }
-            }    
-  extraEnvFrom: 
+            }
+  extraEnvFrom:
     - secretRef:
         name: paperless-authentik-credentials
 {% endif %}        

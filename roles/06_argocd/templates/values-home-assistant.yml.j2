@@ -6,6 +6,22 @@ home-assistant:
   env:
     - name: TZ
       value: "{{ timezone }}"
+{% if deploy_authentik %}      
+    - name: authentik_client_id
+      valueFrom:
+        secretKeyRef:
+          name: homeassistant-authentik-credentials
+          key: authentik_client_id
+    - name: authentik_client_secret
+      valueFrom:
+        secretKeyRef:
+          name: homeassistant-authentik-credentials
+          key: authentik_client_secret       
+{% endif %}
+
+  # Add privileged security context for USB device access
+  securityContext:
+    privileged: true
 
   ingress:
     enabled: true
@@ -37,8 +53,42 @@ home-assistant:
       - 172.16.0.0/12
       - 192.168.0.0/16
       - 10.42.0.0/16
-
+    
+{% if deploy_authentik %}    
+    templateConfig: |-   
+      openid:
+        client_id: $authentik_client_secret
+        client_secret: $authentik_client_secret
+        configure_url: "https://authentik.{{ domain }}/application/o/homeassistant/.well-known/openid-configuration"
+        scope: "openid profile email"
+        username_field: "preferred_username"
+        block_login: false
+{% endif %}      
 
   serviceMonitor:
-    # requires HA integration:  https://www.home-assistant.io/integrations/prometheus/
     enabled: true
+
+{% if home_assistant_hw.enabled %}
+  additionalVolumes:
+    - name: usb
+      hostPath:
+        path: "{{ home_assistant_hw.path }}"
+        type: CharDevice
+
+  additionalMounts:
+    - name: usb
+      mountPath: /dev/ttyUSB0
+
+{% if home_assistant_hw.scheduling_enabled %}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - "{{ home_assistant_hw.node }}"
+{% endif %}
+{% endif %}
+

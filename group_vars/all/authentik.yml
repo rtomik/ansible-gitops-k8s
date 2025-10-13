@@ -150,4 +150,19 @@ authentik_apps:
     sub_mode: user_email
     signing_key: true
     additional_config: []
+  - name: HomeAssistant
+    slug: homeassistant
+    namespace: apps
+    deploy_condition: deploy_homeassistant | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://home.{{ domain }}/auth/openid/callback"
+    meta_launch_url: "https://home.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: homeassistant-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
+
 

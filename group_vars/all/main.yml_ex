@@ -527,14 +527,21 @@ deploy_joplin_server: true
 
 # ----- APP Settings --------- #
 
-# --- home-assistant --- #
-# If you want to additional mount to the home assistant pod for example for zigbee gateway
-
+# --- Home Assistant --- #
+# If you want to additional mount to the home assistant pod for example for zigbee gateway usb dongle
+home_assistant_hw:
+  enabled: false 
+  path: /dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_1ec49437596bef1193919fadc169b110-if00-port0
+  # Node scheduling options
+  # Set 'scheduling_enabled' to false to allow scheduling on any node
+  scheduling_enabled: true
+  # Define node hostname
+  node: master-03
 
 # --- Jellyfin hw acceleration --- #
 # More info https://www.johanneskueber.com/posts/hardware_acceleration_kubernets_jellyfin/
 jellyfin_hw:
-  enabled: true
+  enabled: false
   path: /dev/dri
   # Node scheduling options
   # Set 'scheduling_enabled' to false to allow scheduling on any node

@@ -152,6 +152,11 @@ Some apps needs to be configured manually
 #### Audiobookshelf
   
    - Guide [Authentik docs](https://www.audiobookshelf.org/guides/oidc_authentication)    
+  
+#### Home Assistant
+   - Install [HACS](https://www.hacs.xyz/docs/use/download/download/#to-download-hacs)   
+   - Install [hass-openid](https://github.com/cavefire/hass-openid)   
+   
 
 ### Configure Apps
 
