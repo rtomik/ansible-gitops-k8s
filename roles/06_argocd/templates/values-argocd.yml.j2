@@ -28,6 +28,13 @@ repoServer:
   metrics:
     enabled: true
 
+  # Increase timeouts for slow network connections
+  env:
+    - name: ARGOCD_EXEC_TIMEOUT
+      value: "300s"
+    - name: ARGOCD_GIT_ATTEMPTS_COUNT
+      value: "3"
+
 applicationSet:
   replicas: 2
   metrics:
@@ -54,6 +61,9 @@ server:
 configs:
   params:
     server.insecure: true
+    # Increase timeout for repository operations
+    timeout.reconciliation: "300s"
+    controller.repo.server.timeout.seconds: "180"
   cm:
     url: https://argocd.{{ domain }}
 

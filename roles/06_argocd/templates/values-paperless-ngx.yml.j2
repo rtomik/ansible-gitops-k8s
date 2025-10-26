@@ -2,7 +2,7 @@ paperless-ngx:
   ## Image settings
   image:
     repository: ghcr.io/paperless-ngx/paperless-ngx
-    tag: "2.18.4"
+    tag: "2.19.2"
     pullPolicy: IfNotPresent
     
   ingress:
@@ -60,18 +60,18 @@ paperless-ngx:
   redis:
     external:
       enabled: true
-      host: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
+      host: "dragonfly-cluster.dbs.svc.cluster.local"
       port: 6379
+      database: 0
+      username: "default"
       password: "{{ vault_dragonfly_password }}"
 
   config:
     url: https://paperless.tomik.lat
     allowedHosts: "*"
 
-  env:
-    - name: PAPERLESS_REDIS
-      value: "redis://:{{ vault_dragonfly_password }}@{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379/0"
 {% if deploy_authentik %}
+  env:
     - name: PAPERLESS_APPS
       value: "allauth.socialaccount.providers.openid_connect"
     - name: PAPERLESS_AUTO_CREATE
@@ -97,4 +97,4 @@ paperless-ngx:
   extraEnvFrom:
     - secretRef:
         name: paperless-authentik-credentials
-{% endif %}        
+{% endif %}

@@ -1,16 +1,14 @@
 ---
 renovate:
+  # Disable built-in Redis and use external Dragonfly
   redis:
-    enabled: true
-
-    persistence:
-      enabled: true
-      storageClass: "longhorn"
-      accessModes:
-        - ReadWriteOnce
-      size: 8Gi
+    enabled: false
 
   existingSecret: "gitea-api-token"
+
+  # Configure Renovate to use external Dragonfly cache via environment variables
+  env:
+    RENOVATE_REDIS_URL: "redis://:{{ vault_dragonfly_password }}@{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local:6379"
   
   cronjob:
     schedule: "0 2 * * *"  # Run daily at 2 AM

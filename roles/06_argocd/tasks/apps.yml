@@ -47,6 +47,15 @@
         suffix: -gitops
       register: git_temp_dir
 
+    - name: Configure git for better timeout handling
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - git config --global http.sslVerify false
+        - git config --global http.postBuffer 524288000
+        - git config --global http.lowSpeedLimit 1000
+        - git config --global http.lowSpeedTime 600
+      changed_when: false
+
     - name: Clone Git repository
       ansible.builtin.git:
         repo: "https://admin:{{ gitea_api_token | urlencode }}@git.{{ domain }}/{{ git_organization_name }}/{{ git_repo_name }}.git"
@@ -57,11 +66,10 @@
         GIT_TERMINAL_PROMPT: "0"
         # Add git configuration to handle network issues
         GIT_HTTP_LOW_SPEED_LIMIT: "1000"
-        GIT_HTTP_LOW_SPEED_TIME: "300"
+        GIT_HTTP_LOW_SPEED_TIME: "600"
         GIT_HTTP_POST_BUFFER: "524288000"
-        GIT_CURL_VERBOSE: "1"
-      retries: 3
-      delay: 5
+      retries: 5
+      delay: 10
       register: git_clone_result
       until: git_clone_result is succeeded
 
