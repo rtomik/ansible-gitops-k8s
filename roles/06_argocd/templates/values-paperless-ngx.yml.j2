@@ -74,26 +74,27 @@ paperless-ngx:
   env:
     - name: PAPERLESS_APPS
       value: "allauth.socialaccount.providers.openid_connect"
-    - name: PAPERLESS_AUTO_CREATE
-      value: true
+    - name: PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS
+      value: "true"
     - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
       value: |
-            {
-              "openid_connect": {
-                "APPS": [
-                  {
-                    "provider_id": "authentik",
-                    "name": "Authentik",
-                    "client_id": "$authentik_client_id",
-                    "secret": "$authentik_client_secret",
-                    "settings": {
-                      "server_url": "https://authentik.tomik.lat/application/o/paperless-ngx/.well-known/openid-configuration"
-                    }
-                  }
-                ],
-                "OAUTH_PKCE_ENABLED": "True"
+        {
+          "openid_connect": {
+            "APPS": [
+              {
+                "provider_id": "authentik",
+                "name": "Authentik",
+                "client_id": "$(authentik_client_id)",
+                "secret": "$(authentik_client_secret)",
+                "settings": {
+                  "server_url": "https://authentik.{{ domain }}/application/o/paperless-ngx/.well-known/openid-configuration"
+                }
               }
-            }
+            ],
+            "OAUTH_PKCE_ENABLED": "True"
+          }
+        }
+
   extraEnvFrom:
     - secretRef:
         name: paperless-authentik-credentials
