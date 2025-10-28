@@ -21,11 +21,15 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 | Category | Applications |
 |----------|-------------|
-| Infrastructure | - KubeVIP (LoadBalancer)<br>- Traefik (Ingress Controller)<br>- Longhorn (Distributed Block Storage) |
+| Infrastructure | - KubeVIP (LoadBalancer)<br>- Traefik (Ingress Controller)<br>- Longhorn (Distributed Block Storage)<br>- CloudNativePG (Central PostgreSQL)<br>- Dragonfly (Central Redis Cache)<br>- Velero (Backup & Restore) |
 | GitOps & Management | - ArgoCD (GitOps CD)<br>- Rancher (Kubernetes Management)<br>- Gitea (Source Control)<br>- Renovate (Dependency Automation)|
-| Security | - Authentik (SSO/IAM) |
-| Monitoring Stack | - Prometheus (Metrics)<br>- Grafana (Visualization)<br>- Loki (Log Aggregation) |
-| Other | - Homepage (Dashboard)<br>- Jellyfin (Media server)<br>- Arr-stack (Media management)<br>- Donetick (Task management) |
+| Security & Access | - Authentik (SSO/IAM)<br>- Tailscale (VPN)<br>- cert-manager (TLS Certificates) |
+| Monitoring & Observability | - Prometheus (Metrics)<br>- Grafana (Visualization)<br>- Loki (Log Aggregation)<br>- Alloy (Log Collection) |
+| Media & Entertainment | - Jellyfin (Media Server)<br>- Jellyseerr (Media Requests)<br>- Radarr (Movie Management)<br>- Sonarr (TV Management)<br>- Prowlarr (Indexer Manager)<br>- qBittorrent (Download Client)<br>- Audiobookshelf (Audiobook Server) |
+| Productivity & Organization | - Paperless-ngx (Document Management)<br>- Donetick (Task Management)<br>- Joplin (Note Taking)<br>- Mealie (Recipe Manager)<br>- Recipya (Recipe Manager)<br>- Lubelogger (Vehicle Maintenance) |
+| Home & IoT | - Home Assistant (Home Automation)<br>- Homepage (Dashboard) |
+| Development & AI | - n8n (Workflow Automation)<br>- Open-WebUI (AI Interface) |
+| Photo & Media Management | - Immich (Photo Management)<br>- Karakeep (Media Organizer) |
 
 ### Features
 
@@ -34,6 +38,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 - 📊 Comprehensive monitoring and logging stack
 - 🔐 Integrated SSO with Authentik
 - 💾 Distributed storage with Longhorn
+- 🗄️ Centralized data layer with CloudNativePG (PostgreSQL) and Dragonfly (Redis caching)
 - 📈 Pre-configured Grafana dashboards for:
   - Application logs and metrics
   - Error monitoring
@@ -41,22 +46,61 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
   - Storage metrics
 - 🔄 High availability cluster configuration
 - 🔒 TLS encryption for all services with automatic certificate management
-- 🔒 Secured Access remotely via Tailscale 
+- 🔒 Secured Access remotely via Tailscale
 - 🔄 Automated dependency updates with Renovate
+
+## Architecture
+
+### Deployment Flow
+
+The deployment follows a structured, multi-phase approach:
+
+1. **Local Setup** (`01_local`) - Install Ansible collections and configure vault
+2. **User Creation** (`02_create_user`) - Create ansible user on target nodes
+3. **Base Configuration** (`03_base_config`) - System hardening and preparation
+4. **RKE2 Cluster** (`04_rke2_server`) - Deploy Kubernetes with KubeVIP load balancer
+5. **Infrastructure** (`05_infra`) - Deploy core services (Traefik, Longhorn, Authentik, PostgreSQL, Redis)
+6. **ArgoCD** (`06_argocd`) - Deploy GitOps engine and application definitions
+7. **Applications** (`07_apps`) - Configure specific applications (Grafana dashboards, etc.)
+
+**Deployment time:** Approximately 20-30 minutes for full cluster setup.
+
+### Data Layer Architecture
+
+The project uses a centralized data layer approach:
+
+**CloudNativePG (PostgreSQL):**
+- Centralized PostgreSQL cluster for all applications
+- High availability with automatic failover
+- Applications include: Gitea, Authentik, Paperless-ngx, Immich, n8n, and more
+- Automated backups and point-in-time recovery
+
+**Dragonfly (Redis):**
+- Centralized Redis-compatible cache cluster
+- High-performance in-memory caching
+- Used by: ArgoCD, Paperless-ngx, and other applications
+- Drop-in replacement for Redis with better performance
+
+This architecture eliminates the need for each application to run its own database, reducing resource usage and simplifying backup procedures.
+
+### Network Architecture
+
+- **KubeVIP**: Provides a virtual IP for cluster API access
+- **Traefik**: Ingress controller with automatic TLS via cert-manager
+- **Tailscale**: Secure VPN access to cluster services
+- **Authentik**: Central SSO/IAM for unified authentication across all services
 
 ## Prerequisites
 
 ### Hardware Requirements
 - **Control Node:**
   - Linux system/VM or WSL2 on Windows
-  - With Git, Ansible and kubectl installed
 
 - **Cluster Nodes:**
   - Ubuntu Server 24.04
   - Minimum 16GB RAM per node
   - Recommended: 3 nodes for HA
   - [Low-cost mini PC options](https://www.lowcostminipcs.com/)
-
 
 ### Network Requirements
 - SSH access to all nodes (root SSH keys)
@@ -71,7 +115,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 1. **Clone and prepare configuration**
    ```bash
-   git clone https://github.com/rtomik/ansible-gitops-k8s.git && cd ansible-gitops-k8s\
+   git clone https://github.com/rtomik/ansible-gitops-k8s.git && cd ansible-gitops-k8s && \
    mv inventory.yml_ex inventory.yml && \
    mv group_vars/all/main.yml_ex group_vars/all/main.yml
    ```
@@ -123,7 +167,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 | Grafana | `https://grafana.<DOMAIN>` | Metrics & Logs Visualization |
 | Authentik | `https://authentik.<DOMAIN>` | SSO/IAM Portal |
 | Prometheus | `https://prometheus.<DOMAIN>` | Metrics Storage |
-| Gittea | `https://git.<DOMAIN>` | Source Control |
+| Gitea | `https://git.<DOMAIN>` | Source Control |
 | Homepage | `https://home.<DOMAIN>` | System Dashboard |
 | Jellyfin | `https://jellyfin.<DOMAIN>/web/#/wizardstart.html` | Media |
 
@@ -156,29 +200,33 @@ Some apps needs to be configured manually
 #### Home Assistant
    - Install [HACS](https://www.hacs.xyz/docs/use/download/download/#to-download-hacs)   
    - Install [hass-openid](https://github.com/cavefire/hass-openid)   
-   
+
+#### Paperless-ngx
+   - Create initial admin user
+   - In "My Profile"
+   - Under "Connected social accounts" link account to Authentik
 
 ### Configure Apps
 
 #### Tailscale
    - If you enabled Tailscale, in machine list select rke2-cluster > Edit Route settings > Approve All
 
-#### Qbittorent
-   - If you enabled qbittorent with VPN, check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  
+#### qBittorrent
+   - If you enabled qBittorrent with VPN, check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  
 
 #### Jellyfin
-   - Intial setup https://jellyfin.< DOMAIN >/web/#/wizardstart.html
+   - Initial setup https://jellyfin.<DOMAIN>/web/#/wizardstart.html
 
-#### Jellyserr
-   - Initial setup https://jellyseerr.< DOMAIN >/setup
+#### Jellyseerr
+   - Initial setup https://jellyseerr.<DOMAIN>/setup
 
 #### Radarr, Sonarr add download client
    - Configure login
-   - Add Download Client - qBittorrent https://radarr.< DOMAIN >/settings/downloadclients
+   - Add Download Client - qBittorrent https://radarr.<DOMAIN>/settings/downloadclients
    - Host: qbittorrent-vpn.arr.svc.cluster.local
    - Port: 8080
    - User: admin
-   - PW: Check logs from qbittorent pod
+   - PW: Check logs from qBittorrent pod
 
 ## Troubleshooting
 

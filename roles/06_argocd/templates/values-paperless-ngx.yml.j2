@@ -74,8 +74,16 @@ paperless-ngx:
   env:
     - name: PAPERLESS_APPS
       value: "allauth.socialaccount.providers.openid_connect"
+    - name: PAPERLESS_AUTO_CREATE
+      value: "true"
+    - name: PAPERLESS_AUTO_LOGIN
+      value: "true"
     - name: PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS
       value: "true"
+    - name: PAPERLESS_ENABLE_ALLAUTH
+      value: "true"      
+    - name: PAPERLESS_LOGOUT_REDIRECT_URL
+      value: "https://authentik.{{ domain }}/application/o/paperless-ngx/end-session/"  
     - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
       value: |
         {
