@@ -43,12 +43,6 @@ app_definitions:
     version: "{{ renovate_version }}"
     repo: "https://docs.renovatebot.com/helm-charts"
     namespace: "renovate"
-  wg-easy:
-    enabled: "{{ deploy_wg_easy }}"
-    chart_name: "wg-easy"
-    version: "{{ wg_easy_version }}"
-    repo: "https://raw.githubusercontent.com/hansehe/wg-easy-helm/master/helm/charts"
-    namespace: "wg-easy"
   audiobookshelf:
     enabled: "{{ deploy_audiobookshelf }}"
     chart_name: "audiobookshelf"
@@ -162,6 +156,12 @@ app_definitions:
     chart_name: "home-assistant"
     version: "{{ homeassistant_version }}"
     repo: "http://pajikos.github.io/home-assistant-helm-chart"
+    namespace: "apps"
+  norish:
+    enabled: "{{ deploy_norish }}"
+    chart_name: "norish"
+    version: "{{ norish_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
     namespace: "apps"
 
 # Filter for enabled apps only

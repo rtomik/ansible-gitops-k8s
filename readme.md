@@ -105,11 +105,11 @@ This architecture eliminates the need for each application to run its own databa
 ### Network Requirements
 - SSH access to all nodes (root SSH keys)
 - DOMAIN name (Recommended: [Porkbun](https://porkbun.com/) or [DuckDNS](https://www.duckdns.org/))
-- [Tailscale account](https://login.tailscale.com/admin/settings/keys)
 
 ### Optional
 - Cloudflare account and API token (for TLS certificates)
 - NFS share for media storage and backups
+- [Tailscale account](https://login.tailscale.com/admin/settings/keys)- 
 
 ## Quick Start
 

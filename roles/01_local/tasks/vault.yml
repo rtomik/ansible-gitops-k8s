@@ -39,6 +39,7 @@
         - { name: 'paperless_db_password', length: 15 }
         - { name: 'n8n_db_password', length: 15 }
         - { name: 'donetick_db_password', length: 15 }
+        - { name: 'norish_db_password', length: 15 }
 
       register: generated_tokens
       changed_when: false
@@ -64,6 +65,7 @@
           vault_paperless_db_password: "{{ generated_tokens.results[13].stdout }}"
           vault_n8n_db_password: "{{ generated_tokens.results[14].stdout }}"
           vault_donetick_db_password: "{{ generated_tokens.results[15].stdout }}"
+          vault_norish_db_password: "{{ generated_tokens.results[16].stdout }}"
 
     # Write unencrypted vault file
     - name: Create temporary unencrypted vault file

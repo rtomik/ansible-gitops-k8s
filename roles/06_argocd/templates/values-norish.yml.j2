@@ -1,0 +1,56 @@
+## Ingress settings
+norish:
+  image:
+    repository: norishapp/norish
+    tag: "v0.13.6-beta"
+    pullPolicy: IfNotPresent
+
+  ingress:
+    enabled: true
+    className: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hosts:
+      - host: norish.{{ domain }}
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - hosts:
+          - norish.{{ domain }}
+
+  ## Persistence settings
+  persistence:
+    enabled: true
+    storageClass: "longhorn"
+    accessMode: ReadWriteOnce
+    size: 5Gi
+
+  config:
+    authUrl: "https://norish.{{ domain }}"
+    trustedOrigins: "http://192.168.1.100:3000,https://norish.{{ domain }}"
+    chromeWsEndpoint: "ws://127.0.0.1:9222"
+    masterKey:
+      value: "cp6eVbe4ddmJxlJCJyux5Nlk39gbJR3M9mWjAqEon1c="
+{% if deploy_authentik %}
+    auth:
+      # OIDC/OAuth2 provider
+      oidc:
+        enabled: true
+        name: "Authentik"
+        issuer: "https://authentik.{{ domain }}/application/o/norish/"
+        existingSecret: "norish-authentik-credentials"
+        clientIdKey: "authentik_client_id"
+        clientSecretKey: "authentik_client_secret"
+{% endif %}
+
+  database:
+    # Database connection details
+    host: "postgres-cluster-pooler.dbs.svc.cluster.local"                 # Required: PostgreSQL server hostname
+    port: 5432
+    # Use existing secret for database credentials (recommended for production)
+    existingSecret: "norish2-db-credentials"          # Name of existing Kubernetes secret
+    usernameKey: "username" 
+    passwordKey: "password"
+    databaseKey: "database"
+  

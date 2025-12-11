@@ -16,11 +16,32 @@ authentik:
   redis:
     host: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
     password: "{{ dragonfly.password | default(vault_dragonfly_password) }}"
+    db: 1
 
 server:
   replicas: 1
   strategy:
     type: Recreate
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  livenessProbe:
+    timeoutSeconds: 10
+    periodSeconds: 30
+    failureThreshold: 5
+  readinessProbe:
+    timeoutSeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
+  startupProbe:
+    timeoutSeconds: 10
+    failureThreshold: 70
+    initialDelaySeconds: 30
+    periodSeconds: 20
   ingress:
     enabled: true
     hosts:
@@ -40,12 +61,29 @@ server:
     - name: postgres-creds
       mountPath: /postgres-creds
       readOnly: true
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  livenessProbe:
+    timeoutSeconds: 10
+    periodSeconds: 30
+    failureThreshold: 5
+  readinessProbe:
+    timeoutSeconds: 10
+    periodSeconds: 30
+    failureThreshold: 3
   startupProbe:
+    timeoutSeconds: 10
     failureThreshold: 70
     initialDelaySeconds: 30
     periodSeconds: 20
-
-worker:
   volumes:
     - name: postgres-creds
       secret:
@@ -54,10 +92,6 @@ worker:
     - name: postgres-creds
       mountPath: /postgres-creds
       readOnly: true
-  startupProbe:
-    failureThreshold: 70
-    initialDelaySeconds: 30
-    periodSeconds: 20
 
 redis:
   enabled: false

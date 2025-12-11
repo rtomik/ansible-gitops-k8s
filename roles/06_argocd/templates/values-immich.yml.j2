@@ -1,10 +1,41 @@
 ---
 immich:
-  image:
-    tag: v1.119.0
-
-  # Disable embedded PostgreSQL - using centralized database
-  postgresql:
+  controllers:
+    main:
+      containers:
+        main:
+          image:
+            tag: v2.3.1
+          env:
+            REDIS_HOSTNAME: "{{ dragonfly.cluster_name | default('dragonfly-cluster') }}.{{ dragonfly.namespace | default('dbs') }}.svc.cluster.local"
+            REDIS_PASSWORD: "{{ dragonfly.password | default(vault_dragonfly_password) }}"            
+            IMMICH_MACHINE_LEARNING_URL: ""
+            DB_HOSTNAME:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: host
+            DB_USERNAME:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: user
+            DB_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: password
+            DB_DATABASE_NAME:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: dbname
+            DB_URL:
+              valueFrom:
+                secretKeyRef:
+                  name: immich-database-app
+                  key: uri
+  valkey:
     enabled: false
 
   immich:
@@ -12,92 +43,51 @@ immich:
       enabled: true
     persistence:
       library:
-        existingClaim: immich-library
-
-  env:
-    # Use centralized PostgreSQL database
-    DB_HOSTNAME: "{{ postgresql.cluster_name }}-pooler.{{ postgresql.namespace }}.svc.cluster.local"
-    DB_USERNAME:
-      valueFrom:
-        secretKeyRef:
-          name: immich-db-credentials
-          key: username
-    DB_DATABASE_NAME:
-      valueFrom:
-        secretKeyRef:
-          name: immich-db-credentials
-          key: database
-    DB_PASSWORD:
-      valueFrom:
-        secretKeyRef:
-          name: immich-db-credentials
-          key: password
-    # Set additional required environment variables explicitly
-    REDIS_HOSTNAME: '{% raw %}{{ printf "%s-redis-master" .Release.Name }}{% endraw %}'
-    IMMICH_MACHINE_LEARNING_URL: '{% raw %}{{ printf "http://%s-machine-learning:3003" .Release.Name }}{% endraw %}'
-
-  redis:
-    enabled: true
-    architecture: standalone
-    auth:
-      enabled: false
+        existingClaim: immich-data
 
   server:
     enabled: true
-    image:
-      repository: ghcr.io/immich-app/immich-server
-      pullPolicy: IfNotPresent
-    # Add health check configuration for better startup handling
-    probes:
-      startup:
-        enabled: true
-        spec:
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 60
-      liveness:
-        enabled: true
-        spec:
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 5
-      readiness:
-        enabled: true
-        spec:
-          initialDelaySeconds: 15
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 5
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/immich-app/immich-server
+              pullPolicy: IfNotPresent
     ingress:
       main:
         enabled: true
-        className: traefik
         annotations:
           traefik.ingress.kubernetes.io/router.entrypoints: websecure
           traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
         hosts:
           - host: immich.{{ domain }}
             paths:
-              - path: /
-                pathType: Prefix
+              - path: "/"
+                service:
+                  identifier: main
         tls:
           - hosts:
-              - immich.{{ domain }}
+            - immich.{{ domain }}
 
   machine-learning:
     enabled: true
-    image:
-      repository: ghcr.io/immich-app/immich-machine-learning
-      pullPolicy: IfNotPresent
-    env:
-      TRANSFORMERS_CACHE: /cache
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/immich-app/immich-machine-learning
+              pullPolicy: IfNotPresent
+            env:
+              TRANSFORMERS_CACHE: /cache
+              HF_XET_CACHE: /cache/huggingface-xet
+              MPLCONFIGDIR: /cache/matplotlib-config
     persistence:
       cache:
         enabled: true
-        size: 5Gi
-        # Optional: Set this to pvc to avoid downloading the ML models every start.
-        type: emptyDir
+        size: 10Gi
+        type: persistentVolumeClaim
         accessMode: ReadWriteMany
         storageClass: longhorn
+

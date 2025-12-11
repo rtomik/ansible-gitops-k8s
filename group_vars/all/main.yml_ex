@@ -264,7 +264,7 @@ postgresql:
 
   # Storage configuration
   storage:
-    size: "20Gi"
+    size: "30Gi"
     storage_class: "longhorn"  # Using Longhorn for persistent storage
 
   # PostgreSQL configuration parameters
@@ -362,6 +362,23 @@ postgresql:
       description: "donetick"
       app_namespace: "apps"
       privileges: "ALL"
+    tandoor:
+      enabled: "{{ deploy_tandoor }}"
+      database_name: "tandoor"
+      username: "tandoor_user"
+      password: "{{ vault_donetick_db_password | default('placeholder') }}"
+      description: "tandoor"
+      app_namespace: "apps"
+      privileges: "ALL"
+    norish2:
+      enabled: "{{ deploy_norish }}"
+      database_name: "norish2"
+      username: "norish2_user"
+      password: "{{ vault_norish_db_password | default('placeholder') }}"
+      description: "norish2"
+      app_namespace: "apps"
+      privileges: "ALL"
+
 
     # Example databases (uncomment and configure when needed):
     # authentik:
@@ -504,14 +521,12 @@ deploy_loki: true
 deploy_rancher: false
 deploy_authentik: true
 deploy_renovate: true
-deploy_wg_easy: false
 deploy_cnpg: true # central postgresql
 deploy_dragonfly: true # central redis-compatible cache
 
 # Apps
 deploy_audiobookshelf: true
 deploy_homeassistant: true
-deploy_recipya: false
 deploy_open_webui: true
 deploy_jellyfin: true
 deploy_arr: true # Will deploy sonarr radarr jellyserr qbittorrent-vpn
@@ -522,8 +537,13 @@ deploy_lubelogger: true
 deploy_n8n: true
 deploy_immich: true
 deploy_karakeep: true
-deploy_mealie: true
 deploy_joplin_server: true
+
+# Recipe managers
+deploy_tandoor: false
+deploy_norish: true
+deploy_mealie: false
+deploy_recipya: false
 
 # ----- APP Settings --------- #
 
@@ -598,7 +618,7 @@ install_rke2_type: "server"
 kube_vip_version: "v1.0.0"
 rke2_hostname: "rke2.{{ domain }}"
 
-# Helm chart versions
+# --- Helm chart versions--- #
 # Infrastructure
 traefik_version: 34.4.1
 certmanager_version: 1.16.3
@@ -610,7 +630,6 @@ gitlab_version: 8.8.0
 gitea_version: 12.4.0
 reflector_version: 7.1.288
 renovate_version: 44.15.1
-wg_easy_version: 0.1.2
 cnpg_version: 0.26.0
 
 # Monitoring
@@ -621,7 +640,7 @@ loki_version: 6.24.1
 alloy_version: 1.2.1
 
 # Apps
-jellyfin_version: 2.3.0
+jellyfin_version: 2.5.0
 homepage_version: 2.0.2
 audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
@@ -635,12 +654,13 @@ prowlarr_version: 1.41.1
 qbittorrent_vpn_version: 0.0.1
 jellyseerr_version: 0.0.1
 lubelogger_version: 0.6.2
-n8n_version: 1.15.7
-immich_version: 0.9.3
+n8n_version: 1.16.4
+immich_version: 0.10.3
 karakeep_version: 0.0.1
 mealie_version: 0.0.2
 joplin_server_version: 0.0.2
-homeassistant_version: 0.3.22
+homeassistant_version: 0.3.30
+norish_version: 0.0.3
 
 # Server configuration
 perform_full_upgrade: true

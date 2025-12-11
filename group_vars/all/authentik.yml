@@ -164,5 +164,19 @@ authentik_apps:
     sub_mode: user_email
     signing_key: true
     additional_config: []
+  - name: Norish
+    slug: norish
+    namespace: apps
+    deploy_condition: deploy_norish | bool
+    client_type: confidential
+    redirect_uris:
+      - matching_mode: strict
+        url: "https://norish.{{ domain }}/api/auth/oauth2/callback/oidc"
+    meta_launch_url: "https://norish.{{ domain }}"
+    open_in_new_tab: true
+    secret_name: norish-authentik-credentials
+    sub_mode: user_email
+    signing_key: true
+    additional_config: []
 
 

@@ -46,10 +46,18 @@ n8n:
     mode: queue
 
     autoscaling:
-      enabled: true
+      enabled: false
 
     waitMainNodeReady:
       enabled: true
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 512m
+        memory: 512Mi
 
   webhook:
     mode: queue
@@ -57,7 +65,14 @@ n8n:
     url: "https://webhook.{{ domain }}"
 
     autoscaling:
-      enabled: true
+      enabled: false
 
     waitMainNodeReady:
       enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 512m
+        memory: 512Mi      

@@ -41,12 +41,7 @@ homepage:
         - Longhorn:
             href: https://longhorn.{{ domain }}/
             description: Cloud Native Storage
-            icon: /icons/longhorn.svg
-{% if deploy_wg_easy %}
-        - Gitea:
-            href: https://wgeasy.{{ domain }}/
-            description: Wireguard VPN
-{% endif %}        
+            icon: /icons/longhorn.svg     
       - Monitoring:
         - Prometheus:
             href: https://prometheus.{{ domain }}/
@@ -156,6 +151,12 @@ homepage:
             href: https://karakeep.{{ domain }}
             description: Bookmarks
             icon: /icons/karakeep.svg
+{% endif %}
+{% if deploy_norish %}
+        - Norish:
+            href: https://norish.{{ domain }}
+            description: Recipe Manager
+            icon: /icons/mealie.svg
 {% endif %}
 
 
