@@ -80,8 +80,13 @@
               },
               "args": [
                 "--maxmemory={{ dragonfly.config.maxmemory | default('256mb') }}",
-                "--proactor_threads={{ dragonfly.config.proactor_threads | default('2') }}",
-                "--cluster_mode={{ dragonfly.config.cluster_mode | default('emulated') }}"
+                "--proactor_threads={{ dragonfly.config.proactor_threads | default('2') }}"
+                {% if dragonfly.config.cluster_mode is defined %},
+                "--cluster_mode={{ dragonfly.config.cluster_mode }}"
+                {% endif %}
+                {% if dragonfly.config.default_lua_flags is defined %},
+                "--default_lua_flags={{ dragonfly.config.default_lua_flags }}"
+                {% endif %}
                 {% if dragonfly.auth.enabled | default(true) | bool %},
                 "--requirepass=$(DRAGONFLY_PASSWORD)"
                 {% endif %}

@@ -20,6 +20,14 @@ controller:
   metrics:
     enabled: true
 
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
 repoServer:
   autoscaling:
     enabled: true
@@ -27,6 +35,14 @@ repoServer:
 
   metrics:
     enabled: true
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
 
   # Increase timeouts for slow network connections
   env:
@@ -40,10 +56,26 @@ applicationSet:
   metrics:
     enabled: true
 
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
 server:
   autoscaling:
     enabled: true
     minReplicas: 2
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
   ingress:
     enabled: true
@@ -131,3 +163,11 @@ notifications:
   enabled: true
   metrics:
     enable: true
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi

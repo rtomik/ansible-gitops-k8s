@@ -27,6 +27,7 @@
           - auditd
           - tcpdump
           - containerd
+          - cifs-utils
         state: present
         install_recommends: false  # Minimize installation footprint
       register: package_install

@@ -22,6 +22,9 @@ server:
   replicas: 1
   strategy:
     type: Recreate
+  env:
+    - name: AUTHENTIK_POSTGRESQL__DISABLE_SERVER_SIDE_CURSORS
+      value: "true"
   resources:
     requests:
       cpu: 200m
@@ -64,6 +67,9 @@ server:
 
 worker:
   replicas: 1
+  env:
+    - name: AUTHENTIK_POSTGRESQL__DISABLE_SERVER_SIDE_CURSORS
+      value: "true"
   resources:
     requests:
       cpu: 200m

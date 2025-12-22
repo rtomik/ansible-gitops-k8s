@@ -646,7 +646,7 @@ audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
 donetick_version: 1.0.4
 tandoor_version: 0.9.9
-paperless_ngx_version: 0.0.2
+paperless_ngx_version: 0.0.4
 recipya_version: 0.0.2
 radarr_version: 1.14.0
 sonarr_version: 1.10.1
@@ -654,14 +654,13 @@ prowlarr_version: 1.41.1
 qbittorrent_vpn_version: 0.0.1
 jellyseerr_version: 0.0.1
 lubelogger_version: 0.6.2
-n8n_version: 1.16.4
+n8n_version: 1.16.10
 immich_version: 0.10.3
 karakeep_version: 0.0.1
 mealie_version: 0.0.2
 joplin_server_version: 0.0.2
 homeassistant_version: 0.3.30
-norish_version: 0.0.3
-
+norish_version: 0.0.4
 # Server configuration
 perform_full_upgrade: true
 disable_ipv6: false
