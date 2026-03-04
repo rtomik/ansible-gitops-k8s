@@ -406,19 +406,37 @@ git_organization_name: "homelab"
 git_repo_name: "argocd"
 deploy_gitlab: false
 
-# --- VPN Access --- #
-# If you want to access the cluster via Tailscale VPN
+# --- VPN Access (Tailscale Operator) --- #
+# Deploys the official Tailscale Kubernetes Operator as a subnet router.
+# Docs: https://tailscale.com/kb/1236/kubernetes-operator
+#
+# Setup steps:
+# 1. Go to https://login.tailscale.com/admin/settings/oauth
+#    Create an OAuth client with scopes: Devices Core, Auth Keys, Services (all write)
+#    Assign tag: tag:k8s-operator to the client
+# 2. Add vault_tailscale_oauth_client_id and vault_tailscale_oauth_client_secret
+#    to your vault file (group_vars/all/vault.yml)
+# 3. Add to your Tailscale ACL policy (https://login.tailscale.com/admin/acls): (JSON EDITOR)
+#    "tagOwners": { "tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"] }
+#    "autoApprovers": { "routes": { "10.42.0.0/16": ["tag:k8s"], "10.43.0.0/16": ["tag:k8s"] } }
 tailscale:
   enabled: false
-  auth_key: "{{ vault_tailscale_key }}"
-  # Define your local subnet ex. 192.168.1.0/24
-  subnet: 192.168.1.0/24
-  hostname: "rke2-cluster"
-  version: "latest"
-  image_pull_policy: "IfNotPresent"
-  force_update: false
+  oauth:
+    client_id: "{{ vault_tailscale_oauth_client_id }}"
+    client_secret: "{{ vault_tailscale_oauth_client_secret }}"
+  # Your local LAN subnet to expose via Tailscale (e.g. 192.168.1.0/24)
+  subnet: "192.168.1.0/24"
+  # Hostname for the subnet router device on your tailnet
+  hostname: "k8s-subnet-router"
+  # Hostname for the operator itself on your tailnet
+  operator_hostname: "tailscale-operator"
+  # Additional subnets to advertise beyond K8s CIDRs and subnet above
   extra_routes: []
-  tags: []
+  # ACL tags — must match your Tailscale ACL policy tagOwners
+  operator_tag: "tag:k8s-operator"
+  proxy_tag: "tag:k8s"
+  tags:
+    - tag:k8s
 
 # --- ETCD Backup Configuration --- #
 # Automated etcd database backups for cluster state recovery
@@ -631,6 +649,7 @@ gitea_version: 12.4.0
 reflector_version: 7.1.288
 renovate_version: 44.15.1
 cnpg_version: 0.26.0
+tailscale_operator_version: "1.82.0"
 
 # Monitoring
 prometheus_stack_version: 77.5.0

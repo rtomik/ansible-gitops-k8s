@@ -2,6 +2,15 @@
 - name: Deploy Gitea
   when: deploy_gitea | bool
   block:
+    - name: Create Gitea namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: gitea
+
     - name: Create Gitea admin credentials secret
       kubernetes.core.k8s:
         state: present
@@ -16,14 +25,30 @@
             username: "{{ 'admin' | b64encode }}"
             password: "{{ vault_gitea_admin_password | b64encode }}"
 
-    - name: Fetch Gitea Helm chart information
+    - name: Check if Gitea is already deployed
       kubernetes.core.helm_info:
         name: gitea
         release_namespace: gitea
       register: gitea_helm_info
       ignore_errors: true
 
-    - name: Deploy or install gitea
+    - name: Set Gitea deployment status
+      ansible.builtin.set_fact:
+        gitea_already_deployed: "{{ gitea_helm_info.status is defined and gitea_helm_info.status.status is defined and gitea_helm_info.status.status == 'deployed' }}"
+        gitea_current_version: "{{ gitea_helm_info.status.version | default('0') if gitea_helm_info.status is defined else '0' }}"
+        gitea_needs_upgrade: "{{ (gitea_helm_info.status is defined and gitea_helm_info.status.version is defined and gitea_helm_info.status.version != gitea_version) | bool }}"
+
+    - name: Display Gitea deployment decision
+      ansible.builtin.debug:
+        msg: >
+          Gitea deployment status:
+          Already deployed: {{ gitea_already_deployed }}
+          Current version: {{ gitea_current_version }}
+          Target version: {{ gitea_version }}
+          Needs upgrade: {{ gitea_needs_upgrade }}
+          Will deploy/upgrade: {{ not gitea_already_deployed or gitea_needs_upgrade }}
+
+    - name: Deploy or upgrade Gitea
       kubernetes.core.helm:
         name: gitea
         chart_ref: gitea/gitea
@@ -36,8 +61,9 @@
       register: gitea_deploy
       retries: 5
       delay: 30
+      when: not gitea_already_deployed or gitea_needs_upgrade
 
-    - name: Wait for gitea pod to be ready
+    - name: Wait for Gitea pods to be ready (after deployment)
       kubernetes.core.k8s_info:
         kind: Pod
         namespace: gitea
@@ -50,16 +76,30 @@
         (gitea_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
       retries: 30
       delay: 30
+      when: gitea_deploy is changed
 
-    - name: Wait for Gitea API to be ready
+    - name: Check if Gitea API is accessible
       ansible.builtin.uri:
         url: "https://git.{{ domain }}/api/v1/version"
         method: GET
         status_code: [200, 404, 503]
+        validate_certs: false
+      register: gitea_api_initial_check
+      failed_when: false
+      retries: 3
+      delay: 5
+
+    - name: Wait for Gitea API to be ready (if not accessible)
+      ansible.builtin.uri:
+        url: "https://git.{{ domain }}/api/v1/version"
+        method: GET
+        status_code: [200]
+        validate_certs: false
       register: gitea_api_check
       retries: 10
       delay: 30
       until: gitea_api_check.status == 200
+      when: gitea_api_initial_check.status is not defined or gitea_api_initial_check.status != 200
 
 - name: Create Gitea API token for Renovate
   when: deploy_renovate | bool and deploy_gitea | bool

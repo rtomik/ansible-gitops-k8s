@@ -24,6 +24,7 @@
     - { name: authentik, url: "https://charts.goauthentik.io/"}
     - { name: csi-driver-smb, url: "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts"}
     - { name: cloudnative-pg, url: "https://cloudnative-pg.github.io/charts"}
+    - { name: tailscale, url: "https://pkgs.tailscale.com/helmcharts"}
   tags:
     - infra
     - infra:repos
@@ -33,6 +34,8 @@
     - infra:init
     - infra:postgres
     - infra:db
+    - infra:tailscale
+    - infra:vpn
 
 - name: Update Helm repositories
   ansible.builtin.shell: helm repo update
@@ -117,4 +120,10 @@
     - infra
     - infra:etcd-backup
     - infra:backup
+
+- import_tasks: tailscale.yml
+  tags:
+    - infra
+    - infra:tailscale
+    - infra:vpn
 

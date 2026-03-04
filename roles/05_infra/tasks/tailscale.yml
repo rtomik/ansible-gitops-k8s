@@ -1,0 +1,97 @@
+---
+# Tailscale Kubernetes Operator deployment
+# Uses OAuth credentials (not auth keys) - no manual key rotation needed.
+# Docs: https://tailscale.com/kb/1236/kubernetes-operator
+#
+# Prerequisites in Tailscale Admin Console (https://login.tailscale.com/admin):
+# 1. Create OAuth client (Settings > OAuth clients) with scopes:
+#    - Devices Core (write), Auth Keys (write), Services (write)
+#    Tag the OAuth client with: tag:k8s-operator
+# 2. Add to your tailnet ACL policy:
+#    "tagOwners": {
+#      "tag:k8s-operator": [],
+#      "tag:k8s": ["tag:k8s-operator"]
+#    }
+# 3. Optional - auto-approve subnet routes without manual console approval:
+#    "autoApprovers": {
+#      "routes": {
+#        "10.42.0.0/16": ["tag:k8s"],
+#        "10.43.0.0/16": ["tag:k8s"]
+#      }
+#    }
+
+- name: Deploy Tailscale Operator
+  when: tailscale.enabled | bool
+  block:
+    - name: Validate Tailscale OAuth configuration
+      ansible.builtin.assert:
+        that:
+          - tailscale.oauth.client_id is defined and tailscale.oauth.client_id | length > 0
+          - tailscale.oauth.client_secret is defined and tailscale.oauth.client_secret | length > 0
+          - tailscale.subnet is defined and tailscale.subnet | length > 0
+        fail_msg: >
+          Tailscale configuration is invalid.
+          Add vault_tailscale_oauth_client_id and vault_tailscale_oauth_client_secret
+          to your vault file. Create OAuth credentials at:
+          https://login.tailscale.com/admin/settings/oauth
+
+    - name: Deploy Tailscale Operator via Helm
+      kubernetes.core.helm:
+        name: tailscale-operator
+        chart_ref: tailscale/tailscale-operator
+        chart_version: "{{ tailscale_operator_version }}"
+        release_namespace: tailscale
+        create_namespace: true
+        values:
+          oauth:
+            clientId: "{{ tailscale.oauth.client_id }}"
+            clientSecret: "{{ tailscale.oauth.client_secret }}"
+          operatorConfig:
+            defaultTags: "{{ tailscale.operator_tag | default('tag:k8s-operator') }}"
+            hostname: "{{ tailscale.operator_hostname | default('tailscale-operator') }}"
+          proxyConfig:
+            defaultTags: "{{ tailscale.proxy_tag | default('tag:k8s') }}"
+        wait: true
+        wait_timeout: 5m
+      register: tailscale_operator_deploy
+
+    - name: Wait for Tailscale Operator to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: tailscale
+        label_selectors:
+          - app.kubernetes.io/name=tailscale-operator
+      register: operator_pods
+      until: >
+        operator_pods.resources | length > 0 and
+        (operator_pods.resources | map(attribute='status.phase') | list | unique == ['Running'])
+      retries: 15
+      delay: 20
+      when: tailscale_operator_deploy is changed
+
+    - name: Build advertised routes list
+      ansible.builtin.set_fact:
+        tailscale_routes: >-
+          {{ ['10.42.0.0/16', '10.43.0.0/16', tailscale.subnet] +
+             (tailscale.extra_routes | default([])) }}
+
+    - name: Create Tailscale Connector (subnet router)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: tailscale.com/v1alpha1
+          kind: Connector
+          metadata:
+            name: k8s-subnet-router
+            namespace: tailscale
+          spec:
+            hostname: "{{ tailscale.hostname | default('k8s-subnet-router') }}"
+            tags: "{{ tailscale.tags | default(['tag:k8s']) }}"
+            subnetRouter:
+              advertiseRoutes: "{{ tailscale_routes }}"
+
+  rescue:
+    - name: Handle Tailscale Operator deployment failure
+      ansible.builtin.debug:
+        msg: "Failed to deploy Tailscale Operator. Check the error messages above."
+      failed_when: true

@@ -95,9 +95,7 @@
                   apiTokenSecretRef:
                     name: cloudflare-api-token
                     key: api-token
-              selector:
-                dnsZones:
-                  - "{{ domain }}"
+              # No selector - works for all domains the API token has access to
   when:
     - cloudflare.enabled | bool
     - issuer_check.resources | length == 0

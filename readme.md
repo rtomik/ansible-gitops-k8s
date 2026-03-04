@@ -87,7 +87,7 @@ This architecture eliminates the need for each application to run its own databa
 
 - **KubeVIP**: Provides a virtual IP for cluster API access
 - **Traefik**: Ingress controller with automatic TLS via cert-manager
-- **Tailscale**: Secure VPN access to cluster services
+- **Tailscale Operator**: Secure VPN access via Kubernetes Operator with subnet router (no auth key rotation needed)
 - **Authentik**: Central SSO/IAM for unified authentication across all services
 
 ## Prerequisites
@@ -109,7 +109,7 @@ This architecture eliminates the need for each application to run its own databa
 ### Optional
 - Cloudflare account and API token (for TLS certificates)
 - NFS share for media storage and backups
-- [Tailscale account](https://login.tailscale.com/admin/settings/keys)- 
+- [Tailscale account](https://login.tailscale.com/admin/settings/oauth) (OAuth client, not auth key)
 
 ## Quick Start
 
@@ -208,8 +208,31 @@ Some apps needs to be configured manually
 
 ### Configure Apps
 
-#### Tailscale
-   - If you enabled Tailscale, in machine list select rke2-cluster > Edit Route settings > Approve All
+#### Tailscale Operator
+   1. Create an OAuth client at https://login.tailscale.com/admin/settings/oauth
+      - Scopes: **Devices Core**, **Auth Keys**, **Services** (all write)
+      - Tag the client with: `tag:k8s-operator`
+   2. Add to your vault file (`group_vars/all/vault.yml`):
+      ```yaml
+      vault_tailscale_oauth_client_id: "<client-id>"
+      vault_tailscale_oauth_client_secret: "<tskey-client-...>"
+      ```
+   3. Update your Tailscale ACL policy (https://login.tailscale.com/admin/acls) — JSON editor:
+      ```json
+      "tagOwners": {
+          "tag:k8s-operator": [],
+          "tag:k8s": ["tag:k8s-operator"]
+      },
+      "autoApprovers": {
+          "routes": {
+              "10.42.0.0/16": ["tag:k8s"],
+              "10.43.0.0/16": ["tag:k8s"]
+          }
+      }
+      ```
+   4. Set `tailscale.enabled: true` and `tailscale.subnet` (your LAN CIDR, e.g. `192.168.0.0/24`) in `main.yml`
+   5. Deploy: `ansible-playbook playbooks/main.yaml --tags infra:tailscale`
+   6. The LAN subnet route requires manual approval: Tailscale Admin > Machines > k8s-subnet-router > Edit route settings > Approve
 
 #### qBittorrent
    - If you enabled qBittorrent with VPN, check your torrent client IP [checkmytorrentipaddress](https://torguard.net/checkmytorrentipaddress.php)  

@@ -147,6 +147,7 @@
   vars:
     kubectl_bin_path: /usr/local/bin/kubectl
     temp_dir: /tmp
+    kubectl_fallback_version: "v1.31.4"  # Fallback version if API is unreachable
     kubectl_url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
     kubectl_tmp_path: "{{ temp_dir }}/kubectl"
   block:
@@ -154,11 +155,19 @@
       ansible.builtin.uri:
         url: https://dl.k8s.io/release/stable.txt
         return_content: true
+        timeout: 60
       register: kubectl_version_info
+      retries: 3
+      delay: 5
+      failed_when: false
 
     - name: Set kubectl version
       set_fact:
-        kubectl_version: "{{ kubectl_version_info.content | trim }}"
+        kubectl_version: "{{ kubectl_version_info.content | trim if kubectl_version_info.status == 200 else kubectl_fallback_version }}"
+
+    - name: Display kubectl version being installed
+      ansible.builtin.debug:
+        msg: "Installing kubectl version: {{ kubectl_version }} {{ '(fallback)' if kubectl_version_info.status != 200 else '(latest)' }}"
 
     - name: Check if kubectl is already installed
       ansible.builtin.stat:
