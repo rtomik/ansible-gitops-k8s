@@ -638,32 +638,32 @@ rke2_hostname: "rke2.{{ domain }}"
 
 # --- Helm chart versions--- #
 # Infrastructure
-traefik_version: 34.4.1
+traefik_version: 36.3.0
 certmanager_version: 1.16.3
 argocd_version: 8.2.7
 longhorn_version: 1.9.2
-authentik_version: 2025.6.4
+authentik_version: 2025.12.1
 rancher_version: 2.12.1
 gitlab_version: 8.8.0
 gitea_version: 12.4.0
 reflector_version: 7.1.288
 renovate_version: 44.15.1
 cnpg_version: 0.26.0
-tailscale_operator_version: "1.82.0"
+tailscale_operator_version: 1.82.0
 
 # Monitoring
 prometheus_stack_version: 77.5.0
 prometheus_crds_version: 19.0.0
-grafana_version: 8.15.0
+grafana_version: 10.5.12
 loki_version: 6.24.1
-alloy_version: 1.2.1
+alloy_version: 1.5.1
 
 # Apps
 jellyfin_version: 2.5.0
-homepage_version: 2.0.2
+homepage_version: 2.1.0
 audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
-donetick_version: 1.0.4
+donetick_version: 1.0.6
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.0.4
 recipya_version: 0.0.2
@@ -679,7 +679,8 @@ karakeep_version: 0.0.1
 mealie_version: 0.0.2
 joplin_server_version: 0.0.2
 homeassistant_version: 0.3.30
-norish_version: 0.0.4
+norish_version: 0.0.5
+
 # Server configuration
 perform_full_upgrade: true
 disable_ipv6: false
