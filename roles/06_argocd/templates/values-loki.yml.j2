@@ -20,7 +20,18 @@ loki:
     querier:
       max_concurrent: 4
 
-  deploymentMode: SimpleScalable 
+    compactor:
+      retention_enabled: true
+      working_directory: /var/loki/compactor
+      compaction_interval: 10m
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+      delete_request_store: s3
+
+    limits_config:
+      retention_period: 720h
+
+  deploymentMode: SimpleScalable
   backend:
     replicas: 3 
   read:

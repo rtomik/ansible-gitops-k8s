@@ -251,6 +251,48 @@ Some apps needs to be configured manually
    - User: admin
    - PW: Check logs from qBittorrent pod
 
+## RKE2 Cluster Upgrade
+
+> Do not skip minor versions: `v1.32 → v1.33 → v1.34 → v1.35`
+
+1. Set target version in `group_vars/all/main.yml`:
+   ```yaml
+   rke2_version: "v1.34.6+rke2r1"
+   ```
+2. Review [release notes](https://github.com/rancher/rke2/releases) for breaking changes
+3. Run the upgrade:
+   ```bash
+   ansible-playbook playbooks/upgrade-rke2.yaml
+   ```
+
+The playbook upgrades nodes one at a time (primary first, then secondaries). Each node is cordoned, drained, upgraded, and uncordoned. The cluster API stays available throughout via kube-vip.
+
+Before the first node is touched, the playbook automatically:
+- Saves the cluster token to `rke2-cluster-token.txt` (required for etcd restore — store it securely)
+- Takes an etcd snapshot named `pre-upgrade-<version>-<date>`
+
+### Rollback
+
+```bash
+# Stop RKE2 on all nodes
+systemctl stop rke2-server
+
+# Restore snapshot on primary
+rke2 server --cluster-reset \
+  --cluster-reset-restore-path=/var/lib/rancher/rke2/server/db/snapshots/pre-upgrade-<version>-<date>.db
+
+# Start primary, then on each secondary clear db and restart
+rm -rf /var/lib/rancher/rke2/server/db/ && systemctl start rke2-server
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Node stuck `NotReady` | `systemctl restart rke2-server` and check `journalctl -u rke2-server -n 100` |
+| Node left cordoned | `kubectl uncordon <node>` |
+| Re-run after fixing issue | Safe to re-run — nodes already on target version are skipped |
+
 ## Troubleshooting
 
 Common issues and solutions:

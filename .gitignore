@@ -7,6 +7,7 @@ inventory.yml
 k3s-kubeconfig.yaml
 playbooks/requirements.yml
 rke-kubeconfig.yaml
+rke2-cluster-token.txt
 group_vars/vault.yml
 *_rsa
 *_rsa.pub

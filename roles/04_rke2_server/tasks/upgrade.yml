@@ -1,0 +1,141 @@
+- name: Get current RKE2 version
+  ansible.builtin.command: rke2 --version
+  register: rke2_current_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Parse current RKE2 version
+  ansible.builtin.set_fact:
+    rke2_current_version: >-
+      {{ rke2_current_version_output.stdout
+         | regex_search('rke2 version (v[^\s]+)', '\1')
+         | first | default('unknown') }}
+  when: rke2_current_version_output.rc == 0
+
+- name: Show current vs target version
+  ansible.builtin.debug:
+    msg: "Node {{ inventory_hostname }}: current={{ rke2_current_version | default('unknown') }}, target={{ rke2_version }}"
+
+- name: Skip upgrade if already on target version
+  ansible.builtin.meta: end_host
+  when:
+    - rke2_current_version is defined
+    - rke2_current_version == rke2_version
+
+# Retrieve and save the cluster token before any upgrade (primary only).
+# This token encrypts cluster bootstrap data in the datastore and is required
+# for restoring from etcd backup. If the cluster was started without --token,
+# a random token was generated and must be preserved.
+- name: Read cluster token from primary
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/rke2/server/token
+  register: rke2_cluster_token
+  when: inventory_hostname == groups['master'][0]
+
+- name: Save cluster token to local playbook directory
+  ansible.builtin.copy:
+    content: "{{ rke2_cluster_token.content | b64decode }}"
+    dest: "{{ playbook_dir }}/../rke2-cluster-token.txt"
+    mode: '0600'
+  delegate_to: localhost
+  when: inventory_hostname == groups['master'][0]
+
+- name: Remind operator to store the cluster token safely
+  ansible.builtin.debug:
+    msg: >-
+      IMPORTANT: Cluster token saved to rke2-cluster-token.txt in the playbook directory.
+      Store this token securely — it is required to restore the cluster from an etcd backup.
+  when: inventory_hostname == groups['master'][0]
+
+# Take etcd snapshot on primary before any node is upgraded
+- name: Take etcd snapshot before upgrade (primary only)
+  ansible.builtin.command: >
+    rke2 etcd-snapshot save
+    --name pre-upgrade-{{ rke2_version | replace('+', '-') }}-{{ ansible_date_time.date }}
+  when: inventory_hostname == groups['master'][0]
+  changed_when: true
+  register: etcd_snapshot_result
+
+- name: Show etcd snapshot result
+  ansible.builtin.debug:
+    msg: "{{ etcd_snapshot_result.stdout_lines | default([]) }}"
+  when:
+    - inventory_hostname == groups['master'][0]
+    - etcd_snapshot_result is not skipped
+
+# Cordon and drain using the node's own kubectl (reaches API via VIP)
+- name: Cordon node before upgrade
+  ansible.builtin.command: >
+    /var/lib/rancher/rke2/bin/kubectl
+    --kubeconfig /etc/rancher/rke2/rke2.yaml
+    cordon {{ inventory_hostname }}
+  changed_when: true
+
+- name: Drain node before upgrade
+  ansible.builtin.command: >
+    /var/lib/rancher/rke2/bin/kubectl
+    --kubeconfig /etc/rancher/rke2/rke2.yaml
+    drain {{ inventory_hostname }}
+    --ignore-daemonsets
+    --delete-emptydir-data
+    --disable-eviction=true
+    --timeout=300s
+  changed_when: true
+
+- name: Stop RKE2 service
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: stopped
+
+- name: Download RKE2 installation script
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /tmp/install-rke2.sh
+    mode: '0755'
+    force: true
+
+- name: Install target RKE2 version
+  ansible.builtin.command: /tmp/install-rke2.sh
+  environment:
+    INSTALL_RKE2_TYPE: server
+    INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+  changed_when: true
+
+- name: Start RKE2 service
+  ansible.builtin.systemd:
+    name: rke2-server
+    state: started
+    daemon_reload: true
+
+# After restart, the node re-establishes its API connection and can run kubectl again
+- name: Wait for node to be Ready after upgrade
+  ansible.builtin.command: >
+    /var/lib/rancher/rke2/bin/kubectl
+    --kubeconfig /etc/rancher/rke2/rke2.yaml
+    get node {{ inventory_hostname }}
+    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+  register: node_ready
+  until: node_ready.stdout == "True"
+  retries: 30
+  delay: 15
+  changed_when: false
+
+- name: Uncordon node after upgrade
+  ansible.builtin.command: >
+    /var/lib/rancher/rke2/bin/kubectl
+    --kubeconfig /etc/rancher/rke2/rke2.yaml
+    uncordon {{ inventory_hostname }}
+  changed_when: true
+
+- name: Verify upgraded RKE2 version
+  ansible.builtin.command: rke2 --version
+  register: rke2_new_version_output
+  changed_when: false
+
+- name: Show upgraded version
+  ansible.builtin.debug:
+    msg: >-
+      Node {{ inventory_hostname }} upgraded to
+      {{ rke2_new_version_output.stdout
+         | regex_search('rke2 version (v[^\s]+)', '\1')
+         | first | default('unknown') }}

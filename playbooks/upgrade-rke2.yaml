@@ -1,0 +1,128 @@
+# Upgrade RKE2 on all cluster nodes following official best practice:
+#   1. Primary server first
+#   2. Secondary servers one at a time
+#   (agent-only nodes would follow, not applicable to this all-server cluster)
+#
+# Each node is cordoned → drained → stopped → upgraded → started → waited → uncordoned
+# An etcd snapshot is taken on the primary before any node is touched.
+# The API remains available throughout via kube-vip VIP failover.
+#
+# Prerequisites:
+#   - Set target version in group_vars/all/main.yml: rke2_version
+#   - Do not skip minor versions (upgrade one minor at a time)
+#
+# Usage:
+#   ansible-playbook playbooks/upgrade-rke2.yaml
+#   ansible-playbook playbooks/upgrade-rke2.yaml --limit master1   # single node
+
+- name: Pre-upgrade cluster health check
+  hosts: "{{ groups['master'][0] }}"
+  become: true
+  gather_facts: false
+  vars:
+    ansible_user: "ansible"
+  vars_files:
+    - "../group_vars/all/vault.yml"
+  tasks:
+    - name: Check all nodes are Ready before upgrade
+      ansible.builtin.command: >
+        /var/lib/rancher/rke2/bin/kubectl
+        --kubeconfig /etc/rancher/rke2/rke2.yaml
+        get nodes -o wide
+      register: nodes_output
+      changed_when: false
+
+    - name: Show cluster node status
+      ansible.builtin.debug:
+        msg: "{{ nodes_output.stdout_lines }}"
+
+    - name: Check for non-Running pods
+      ansible.builtin.command: >
+        /var/lib/rancher/rke2/bin/kubectl
+        --kubeconfig /etc/rancher/rke2/rke2.yaml
+        get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+        --no-headers
+      register: unhealthy_pods
+      changed_when: false
+      failed_when: false
+
+    - name: Warn about unhealthy pods
+      ansible.builtin.debug:
+        msg: "WARNING: unhealthy pods detected before upgrade:\n{{ unhealthy_pods.stdout }}"
+      when: unhealthy_pods.stdout | length > 0
+
+- name: Upgrade RKE2 on primary node first
+  hosts: "{{ groups['master'][0] }}"
+  become: true
+  gather_facts: true
+  vars:
+    ansible_user: "ansible"
+  vars_files:
+    - "../group_vars/all/vault.yml"
+  tasks:
+    - name: Upgrade RKE2 on primary
+      ansible.builtin.import_tasks: "../roles/04_rke2_server/tasks/upgrade.yml"
+
+- name: Upgrade RKE2 on secondary nodes
+  hosts: "{{ groups['master'][1:] | join(',') }}"
+  become: true
+  gather_facts: true
+  serial: 1
+  vars:
+    ansible_user: "ansible"
+  vars_files:
+    - "../group_vars/all/vault.yml"
+  tasks:
+    - name: Upgrade RKE2 on secondary
+      ansible.builtin.import_tasks: "../roles/04_rke2_server/tasks/upgrade.yml"
+
+- name: Post-upgrade cluster validation
+  hosts: "{{ groups['master'][0] }}"
+  become: true
+  gather_facts: false
+  vars:
+    ansible_user: "ansible"
+  vars_files:
+    - "../group_vars/all/vault.yml"
+  tasks:
+    - name: Show final node versions
+      ansible.builtin.command: >
+        /var/lib/rancher/rke2/bin/kubectl
+        --kubeconfig /etc/rancher/rke2/rke2.yaml
+        get nodes -o wide
+      register: final_nodes
+      changed_when: false
+
+    - name: Display post-upgrade cluster state
+      ansible.builtin.debug:
+        msg: "{{ final_nodes.stdout_lines }}"
+
+    - name: Verify all nodes are Ready
+      ansible.builtin.command: >
+        /var/lib/rancher/rke2/bin/kubectl
+        --kubeconfig /etc/rancher/rke2/rke2.yaml
+        get nodes
+        -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[-1].type}{"\t"}{.status.conditions[-1].status}{"\n"}{end}'
+      register: node_readiness
+      changed_when: false
+
+    - name: Fail if any node is not Ready
+      ansible.builtin.fail:
+        msg: "One or more nodes are not Ready after upgrade:\n{{ node_readiness.stdout }}"
+      when: "'False' in node_readiness.stdout or 'Unknown' in node_readiness.stdout"
+
+    - name: Check for unhealthy pods post-upgrade
+      ansible.builtin.command: >
+        /var/lib/rancher/rke2/bin/kubectl
+        --kubeconfig /etc/rancher/rke2/rke2.yaml
+        get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+        --no-headers
+      register: post_unhealthy_pods
+      changed_when: false
+      failed_when: false
+
+    - name: Report post-upgrade pod health
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'All pods healthy.' if post_unhealthy_pods.stdout | length == 0
+             else 'WARNING: unhealthy pods:\n' + post_unhealthy_pods.stdout }}
