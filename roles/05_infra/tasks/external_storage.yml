@@ -118,6 +118,7 @@
     - name: Create Storage Classes for SMB
       kubernetes.core.k8s:
         state: present
+        force: true
         definition:
           apiVersion: storage.k8s.io/v1
           kind: StorageClass
@@ -129,7 +130,7 @@
           reclaimPolicy: "{{ item.reclaim_policy | default('Retain') }}"
           volumeBindingMode: Immediate
           parameters:
-            source: "//{{ item.server }}/{{ item.smb.share }}"
+            source: "//{{ item.server | regex_replace('^/+', '') }}/{{ item.smb.share }}"
             csi.storage.k8s.io/node-stage-secret-name: "{{ item.name }}-secret"
             csi.storage.k8s.io/node-stage-secret-namespace: "external-storage"
             csi.storage.k8s.io/provisioner-secret-name: "{{ item.name }}-secret"
@@ -172,6 +173,7 @@
     - name: Create Storage Classes for SFTP
       kubernetes.core.k8s:
         state: present
+        force: true
         definition:
           apiVersion: storage.k8s.io/v1
           kind: StorageClass
@@ -262,37 +264,30 @@
             name: "{{ item.name }}-credentials"
             namespace: external-storage
           type: Opaque
-          stringData: |
-            {% if item.type == 's3' %}
-            access_key: "{{ item.s3.credentials.access_key }}"
-            secret_key: "{{ item.s3.credentials.secret_key }}"
-            {% if item.s3.credentials.session_token | default('') != '' %}
-            session_token: "{{ item.s3.credentials.session_token }}"
-            {% endif %}
-            endpoint: "{{ item.s3.endpoint | default('') }}"
-            region: "{{ item.s3.region }}"
-            bucket: "{{ item.s3.bucket }}"
-            {% elif item.type == 'azure' %}
-            {% if item.azure.credentials.connection_string | default('') != '' %}
-            connection_string: "{{ item.azure.credentials.connection_string }}"
-            {% endif %}
-            {% if item.azure.credentials.storage_key | default('') != '' %}
-            storage_account: "{{ item.azure.storage_account }}"
-            storage_key: "{{ item.azure.credentials.storage_key }}"
-            {% endif %}
-            {% if item.azure.credentials.sas_token | default('') != '' %}
-            sas_token: "{{ item.azure.credentials.sas_token }}"
-            {% endif %}
-            container: "{{ item.azure.container }}"
-            {% elif item.type == 'gcs' %}
-            {% if item.gcs.credentials.service_account_json | default('') != '' %}
-            service_account_json: "{{ item.gcs.credentials.service_account_json }}"
-            {% endif %}
-            bucket: "{{ item.gcs.bucket }}"
-            {% endif %}
+          stringData: "{{ _secret_string_data }}"
       loop: >-
         {{ external_storage.backends | selectattr('enabled', 'equalto', true)
            | selectattr('type', 'in', ['s3', 'azure', 'gcs']) | list }}
       loop_control:
         label: "{{ item.name }}"
       when: external_storage.backends | selectattr('type', 'in', ['s3', 'azure', 'gcs']) | list | length > 0
+      vars:
+        _s3_base:
+          access_key: "{{ item.s3.credentials.access_key | default('') }}"
+          secret_key: "{{ item.s3.credentials.secret_key | default('') }}"
+          endpoint: "{{ item.s3.endpoint | default('') }}"
+          region: "{{ item.s3.region | default('') }}"
+          bucket: "{{ item.s3.bucket | default('') }}"
+        _s3_session: "{{ {'session_token': item.s3.credentials.session_token} if item.s3.credentials.session_token | default('') != '' else {} }}"
+        _s3_data: "{{ _s3_base | combine(_s3_session) }}"
+        _azure_base:
+          container: "{{ item.azure.container | default('') }}"
+        _azure_conn: "{{ {'connection_string': item.azure.credentials.connection_string} if item.azure.credentials.connection_string | default('') != '' else {} }}"
+        _azure_key: "{{ {'storage_account': item.azure.storage_account, 'storage_key': item.azure.credentials.storage_key} if item.azure.credentials.storage_key | default('') != '' else {} }}"
+        _azure_sas: "{{ {'sas_token': item.azure.credentials.sas_token} if item.azure.credentials.sas_token | default('') != '' else {} }}"
+        _azure_data: "{{ _azure_base | combine(_azure_conn) | combine(_azure_key) | combine(_azure_sas) }}"
+        _gcs_base:
+          bucket: "{{ item.gcs.bucket | default('') }}"
+        _gcs_sa: "{{ {'service_account_json': item.gcs.credentials.service_account_json} if item.gcs.credentials.service_account_json | default('') != '' else {} }}"
+        _gcs_data: "{{ _gcs_base | combine(_gcs_sa) }}"
+        _secret_string_data: "{{ _s3_data if item.type == 's3' else (_azure_data if item.type == 'azure' else _gcs_data) }}"

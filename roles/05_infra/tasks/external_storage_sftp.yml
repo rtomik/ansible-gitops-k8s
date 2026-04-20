@@ -57,16 +57,20 @@
       loop: "{{ sftp_test_results.results }}"
 
     # Phase 3: Install SSH keys for failed connections only
+    # Hetzner Storage Box has a restricted shell — key must be uploaded via SFTP, not SSH exec
     - name: Install SSH public keys for failed SFTP connections
       ansible.builtin.shell: |
-        PUB_KEY=$(cat {{ playbook_dir }}/ssh-keys/{{ item.item.name }}_rsa.pub)
-        echo "$PUB_KEY" | sshpass -p "{{ item.item.sftp.password }}" ssh \
+        sshpass -p "{{ item.item.sftp.password }}" sftp \
           -o StrictHostKeyChecking=accept-new \
           -o ConnectTimeout=15 \
-          -p {{ item.item.sftp.ssh_port | default('23') }} \
-          {{ item.item.sftp.user }}@{{ item.item.server }} \
-          "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUB_KEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-        {% endif %}
+          -P {{ item.item.sftp.port | default('23') }} \
+          {{ item.item.sftp.user }}@{{ item.item.server }} <<'SFTP'
+        -mkdir .ssh
+        chmod 700 .ssh
+        put {{ playbook_dir }}/ssh-keys/{{ item.item.name }}_rsa.pub .ssh/authorized_keys
+        chmod 600 .ssh/authorized_keys
+        quit
+        SFTP
       loop: "{{ sftp_test_results.results }}"
       when:
         - item.rc != 0  # Only install if SFTP connection failed
@@ -223,8 +227,8 @@
                     cp /etc/ssh-secret/ssh-private-key /root/.ssh/id_rsa
                     chmod 600 /root/.ssh/id_rsa
                     
-                    # Setup known_hosts
-                    base64 -d /etc/ssh-secret/known-hosts > /root/.ssh/known_hosts
+                    # Setup known_hosts (secret volumes are already decoded by Kubernetes)
+                    cp /etc/ssh-secret/known-hosts /root/.ssh/known_hosts
                     chmod 644 /root/.ssh/known_hosts
                     
                     # Mount SSHFS
