@@ -1,5 +1,10 @@
 ---
 
+- import_tasks: garage_bootstrap.yml
+  tags:
+    - apps
+    - apps:garage
+
 - import_tasks: homepage.yml
   tags:
     - apps

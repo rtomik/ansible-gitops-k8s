@@ -1,0 +1,102 @@
+---
+- name: Configure Garage S3 Storage
+  when: deploy_garage | default(false) | bool
+  block:
+    - name: Create garage namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ garage.namespace }}"
+            labels:
+              app.kubernetes.io/name: garage
+              app.kubernetes.io/managed-by: ansible
+
+    - name: Create garage data directory on SFTP mount
+      ansible.builtin.file:
+        path: "/mnt/hetzner-storage/garage"
+        state: directory
+        mode: '0755'
+      delegate_to: "{{ groups['master'] | first }}"
+      run_once: true
+      failed_when: false
+
+    - name: Create PersistentVolume for garage data (hostPath on storage node)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: garage-data-pv
+            labels:
+              type: garage-data
+              app.kubernetes.io/name: garage
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            capacity:
+              storage: "{{ garage.data.size }}"
+            accessModes:
+              - ReadWriteOnce
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: ""
+            hostPath:
+              path: /mnt/hetzner-storage/garage
+              type: DirectoryOrCreate
+
+    # Garage StatefulSet PVC naming: {volumeName}-{statefulsetName}-{ordinal}
+    # volumeName=data, statefulsetName=garage, ordinal=0 → data-garage-0
+    - name: Create PersistentVolumeClaim for garage data
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: data-garage-0
+            namespace: "{{ garage.namespace }}"
+            labels:
+              app.kubernetes.io/name: garage
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: "{{ garage.data.size }}"
+            storageClassName: ""
+            selector:
+              matchLabels:
+                type: garage-data
+
+    - name: Clone Garage git repository
+      ansible.builtin.git:
+        repo: "https://git.deuxfleurs.fr/Deuxfleurs/garage"
+        dest: "/tmp/garage-helm"
+        version: "main-v1"
+        force: true
+      delegate_to: localhost
+      run_once: true
+
+    - name: Render Garage values override
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/06_argocd/templates/values-garage.yml.j2"
+        dest: "/tmp/garage-values-override.yml"
+        mode: '0600'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Deploy Garage via Helm
+      kubernetes.core.helm:
+        name: garage
+        chart_ref: "/tmp/garage-helm/script/helm/garage"
+        release_namespace: "{{ garage.namespace }}"
+        create_namespace: false
+        values_files:
+          - "/tmp/garage-values-override.yml"
+        wait: true
+        wait_timeout: "5m"
+      delegate_to: localhost
+      run_once: true

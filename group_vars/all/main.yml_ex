@@ -275,14 +275,46 @@ postgresql:
     maintenance_work_mem: "64MB"
 
   # Backup configuration
+  # Two storage types supported — set storage.type accordingly:
+  #
+  #   type: garage  — Self-hosted S3 via Garage (requires deploy_garage: true)
+  #                   Garage data dir is backed by any storage mounted at a hostPath on the node
+  #                   (e.g. NFS, SMB, SFTP via sshfs DaemonSet, or a plain local disk).
+  #                   Bootstrap: ansible-playbook playbooks/main.yaml --tags infra:garage,apps:garage
+  #                   Bucket and access key are auto-created by the bootstrap task.
+  #
+  #   type: s3      — Any external S3-compatible provider (AWS S3, Backblaze B2, Cloudflare R2, etc.)
+  #                   Fill in the storage.s3 block below and add credentials to vault.yml:
+  #                     vault_pg_backup_access_key, vault_pg_backup_secret_key
+  #                   Run: ansible-playbook playbooks/main.yaml --tags apps:garage
+  #                   (same tag — the task detects type and skips Garage-specific steps)
   backup:
-    enabled: true
+    enabled: false
     schedule: "0 2 * * *"  # Daily at 2 AM
     retention_policy: "30d"  # Keep backups for 30 days
-    external_storage:
-      enabled: false  # Can be configured later for S3/Backblaze
-      bucket: ""
-      secret_name: "postgresql-backup-credentials"
+
+    storage:
+      # Options: garage | s3
+      type: "garage"
+
+      path: "postgresql"  # Sub-path inside bucket: s3://<bucket>/postgresql
+      compression: "gzip"  # Options: none, gzip, bzip2, snappy
+
+      wal:
+        compression: "gzip"
+        max_parallel: 4
+        retention: "7d"
+
+      # --- Cloud S3 config (only used when type: s3) ---
+      # Credentials must be added to vault.yml:
+      #   vault_pg_backup_access_key: "your-access-key"
+      #   vault_pg_backup_secret_key: "your-secret-key"
+      s3:
+        endpoint: ""        # Leave empty for AWS S3; set for S3-compatible (e.g. https://s3.eu-central-003.backblazeb2.com)
+        bucket: "pg-backups"
+        region: "us-east-1" # Any string for S3-compatible providers
+        access_key: "{{ vault_pg_backup_access_key | default('') }}"
+        secret_key: "{{ vault_pg_backup_secret_key | default('') }}"
 
   # Connection pooling configuration
   pooler:
@@ -405,6 +437,35 @@ deploy_gitea: true
 git_organization_name: "homelab"
 git_repo_name: "argocd"
 deploy_gitlab: false
+
+# --- Garage S3 Configuration --- #
+# Self-hosted S3-compatible object store, used as PostgreSQL backup target.
+# Docs: https://garagehq.deuxfleurs.fr/documentation/
+#
+# Enable/disable below — then set postgresql.backup.storage.type: garage
+# Bootstrap after deploy: ansible-playbook playbooks/main.yaml --tags infra:garage,apps:garage
+deploy_garage: false
+
+garage:
+  namespace: "garage"
+  # RPC secret for cluster communication (auto-generated in vault)
+  rpc_secret: "{{ vault_garage_rpc_secret }}"
+  # S3 region (can be any string for single-node)
+  region: "garage"
+  # The bucket CNPG will write PostgreSQL backups to
+  pg_backup_bucket: "pg-backups"
+  # Access key name for CNPG (human-readable label)
+  pg_backup_key_name: "cnpg-backup"
+  # Garage service S3 endpoint (within cluster)
+  s3_endpoint: "http://garage.garage.svc.cluster.local:3900"
+  # Storage for Garage metadata (small, use longhorn)
+  meta:
+    size: "1Gi"
+    storage_class: "longhorn"
+  # Storage for Garage data — backed by whatever is mounted at the hostPath on the storage node
+  # (e.g. SFTP sshfs DaemonSet, NFS mount, SMB mount, or local disk)
+  data:
+    size: "200Gi"
 
 # --- VPN Access (Tailscale Operator) --- #
 # Deploys the official Tailscale Kubernetes Operator as a subnet router.
@@ -650,6 +711,7 @@ reflector_version: 7.1.288
 renovate_version: 44.15.1
 cnpg_version: 0.26.0
 tailscale_operator_version: 1.82.0
+garage_version: 0.9.4
 
 # Monitoring
 prometheus_stack_version: 77.5.0

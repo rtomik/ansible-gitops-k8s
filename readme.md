@@ -21,7 +21,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 
 | Category | Applications |
 |----------|-------------|
-| Infrastructure | - KubeVIP (LoadBalancer)<br>- Traefik (Ingress Controller)<br>- Longhorn (Distributed Block Storage)<br>- CloudNativePG (Central PostgreSQL)<br>- Dragonfly (Central Redis Cache)<br>- Velero (Backup & Restore) |
+| Infrastructure | - KubeVIP (LoadBalancer)<br>- Traefik (Ingress Controller)<br>- Longhorn (Distributed Block Storage)<br>- CloudNativePG (Central PostgreSQL)<br>- Dragonfly (Central Redis Cache)<br>- Garage (Self-hosted S3 Object Store)<br>- Velero (Backup & Restore) |
 | GitOps & Management | - ArgoCD (GitOps CD)<br>- Rancher (Kubernetes Management)<br>- Gitea (Source Control)<br>- Renovate (Dependency Automation)|
 | Security & Access | - Authentik (SSO/IAM)<br>- Tailscale (VPN)<br>- cert-manager (TLS Certificates) |
 | Monitoring & Observability | - Prometheus (Metrics)<br>- Grafana (Visualization)<br>- Loki (Log Aggregation)<br>- Alloy (Log Collection) |
@@ -39,6 +39,9 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 - 🔐 Integrated SSO with Authentik
 - 💾 Distributed storage with Longhorn
 - 🗄️ Centralized data layer with CloudNativePG (PostgreSQL) and Dragonfly (Redis caching)
+- 🪣 Self-hosted S3 object storage via Garage for PostgreSQL WAL archiving and base backups
+- 📁 External storage support — SFTP, NFS, and SMB mounts exposed as hostPath PVs
+- 🗄️ PostgreSQL continuous backups (WAL archiving) to Garage or any cloud S3 provider
 - 📈 Pre-configured Grafana dashboards for:
   - Application logs and metrics
   - Error monitoring
@@ -82,6 +85,74 @@ The project uses a centralized data layer approach:
 - Drop-in replacement for Redis with better performance
 
 This architecture eliminates the need for each application to run its own database, reducing resource usage and simplifying backup procedures.
+
+### Object Storage & PostgreSQL Backup
+
+**Garage (Self-hosted S3):**
+- S3-compatible object store running as a single-node StatefulSet on the first master
+- Used for continuous PostgreSQL WAL archiving and daily base backups via CloudNativePG's barman integration
+- Metadata stored on Longhorn; data stored on any external mount (SFTP, NFS, etc.)
+- No public Helm chart — deployed directly from the Garage git repository by Ansible
+
+**PostgreSQL backup supports two backends:**
+- `type: garage` — bootstrapped automatically (bucket + access key created, CNPG cluster patched)
+- `type: s3` — any S3-compatible provider (AWS, Backblaze B2, Cloudflare R2, etc.)
+
+Enable and configure in `group_vars/all/main.yml`:
+```yaml
+deploy_garage: true
+
+garage:
+  namespace: "garage"
+  region: "garage"
+  pg_backup_bucket: "pg-backups"
+  pg_backup_key_name: "cnpg-backup"
+  s3_endpoint: "http://garage.garage.svc.cluster.local:3900"
+  meta:
+    size: "1Gi"
+    storage_class: "longhorn"
+  data:
+    size: "200Gi"   # backed by external storage mount
+
+postgresql:
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+    storage:
+      type: "garage"   # or "s3" for cloud providers
+```
+
+```bash
+# Deploy Garage
+ansible-playbook playbooks/main.yaml --tags infra:garage
+
+# Bootstrap backups (create bucket/key, patch CNPG cluster)
+ansible-playbook playbooks/main.yaml --tags apps:garage
+```
+
+### External Storage
+
+SFTP, NFS, and SMB/CIFS external mounts are deployed as DaemonSets and exposed as hostPath PVs:
+
+```yaml
+external_storage:
+  sftp:
+    host: "your-storage-host"
+    port: 23
+    user: "storagebox"
+    identity_file: "~/.ssh/id_rsa"
+  applications:
+    - name: myapp
+      sftp:
+        remote_path: "/path/on/remote"
+        node: "master-01"        # pin to single node (optional)
+      mount_path: "/mnt/myapp-storage"
+```
+
+```bash
+# Deploy external storage mounts
+ansible-playbook playbooks/main.yaml --tags infra:externalstorage
+```
 
 ### Network Architecture
 
@@ -147,8 +218,13 @@ This architecture eliminates the need for each application to run its own databa
    Delete certificate from kubernetes and retry then ansible playbook
 
 4. **To deploy specific components, use tags**
-   ```
+   ```bash
    ansible-playbook playbooks/main.yml --tags infra
+   ansible-playbook playbooks/main.yaml --tags infra:garage      # Garage S3 storage
+   ansible-playbook playbooks/main.yaml --tags apps:garage       # Bootstrap PostgreSQL backups
+   ansible-playbook playbooks/main.yaml --tags infra:tailscale   # Tailscale VPN operator
+   ansible-playbook playbooks/main.yaml --tags infra:externalstorage  # SFTP/NFS/SMB mounts
+   ansible-playbook playbooks/main.yaml --tags infra:etcd-backup # etcd backup system
    ```
 
 5. **To destroy the cluster and remove everything**
@@ -311,6 +387,29 @@ Common issues and solutions:
    - Check ArgoCD logs for sync errors
    - Verify repository access
    - Validate YAML syntax in manifests
+
+4. **Garage / PostgreSQL Backup Issues**
+   ```bash
+   # Check Garage pod status
+   kubectl logs -n garage garage-0
+   kubectl exec -n garage garage-0 -- /garage status
+
+   # Re-run bootstrap (recreates bucket/key, re-patches CNPG cluster)
+   ansible-playbook playbooks/main.yaml --tags apps:garage
+
+   # Check WAL archiving status
+   kubectl get cluster <name> -n <ns> -o jsonpath='{.status.conditions}'
+   kubectl logs -n cnpg-system -l app.kubernetes.io/name=cloudnative-pg --tail=50
+   ```
+
+5. **External Storage (SFTP stale mount)**
+   ```bash
+   # On the affected node — clear stale FUSE mount
+   fusermount -u /mnt/<name>-storage
+   umount -f /mnt/<name>-storage
+   rm -rf /mnt/<name>-storage
+   kubectl rollout restart daemonset/<name>-sftp -n <namespace>
+   ```
 
 ## Contributing
 

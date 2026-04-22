@@ -207,30 +207,39 @@
                   storage-type: sftp
               spec:
                 hostNetwork: true
+                nodeSelector:
+                  kubernetes.io/hostname: "{{ item.sftp.node | default(groups['master'] | first) }}"
                 tolerations:
                   - operator: Exists
                 containers:
                 - name: sshfs-mounter
                   image: "{{ item.sftp.image | default('alpine:3.19') }}"
+                  lifecycle:
+                    preStop:
+                      exec:
+                        command:
+                          - /bin/sh
+                          - -c
+                          - "fusermount -u /host-mnt/{{ item.name }}-storage 2>/dev/null || umount -l /host-mnt/{{ item.name }}-storage 2>/dev/null || true"
                   command:
                   - /bin/sh
                   - -c
                   - |
                     set -e
                     apk add --no-cache openssh-client sshfs
-                    
+
                     mkdir -p /host-mnt/{{ item.name }}-storage
                     mkdir -p /root/.ssh
                     chmod 700 /root/.ssh
-                    
+
                     # Setup SSH key
                     cp /etc/ssh-secret/ssh-private-key /root/.ssh/id_rsa
                     chmod 600 /root/.ssh/id_rsa
-                    
+
                     # Setup known_hosts (secret volumes are already decoded by Kubernetes)
                     cp /etc/ssh-secret/known-hosts /root/.ssh/known_hosts
                     chmod 644 /root/.ssh/known_hosts
-                    
+
                     # Mount SSHFS
                     sshfs \
                       -o allow_other,reconnect \
@@ -238,7 +247,7 @@
                       -o port={{ item.sftp.port | default('22') }} \
                       {{ item.sftp.user }}@{{ item.server }}:{{ item.sftp.path | default('/') }} \
                       /host-mnt/{{ item.name }}-storage
-                    
+
                     # Keep container running and monitor mount
                     while true; do
                       if ! mountpoint -q /host-mnt/{{ item.name }}-storage; then

@@ -1,0 +1,39 @@
+garage:
+  # Single-node: 1 replica per object
+  replicationMode: "1"
+
+  # rpcSecret omitted — chart auto-generates a random hex secret and stores it in a K8s Secret
+
+  # S3 region
+  s3:
+    api:
+      region: "{{ garage.region }}"
+
+deployment:
+  replicaCount: 1
+
+persistence:
+  meta:
+    storageClass: "{{ garage.meta.storage_class }}"
+    size: "{{ garage.meta.size }}"
+  data:
+    storageClass: ""
+    size: "{{ garage.data.size }}"
+
+nodeSelector:
+  kubernetes.io/hostname: "{{ groups['master'] | first }}"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+ingress:
+  s3:
+    api:
+      enabled: false
+  s3Web:
+    enabled: false

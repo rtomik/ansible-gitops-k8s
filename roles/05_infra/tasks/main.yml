@@ -114,6 +114,12 @@
     - infra:storage
     - infra:nas
 
+- import_tasks: garage_storage.yml
+  tags:
+    - infra
+    - infra:garage
+    - infra:storage
+
 - import_tasks: etcd_backup.yml
   when: deploy_etcd_backup | default(false)
   tags:

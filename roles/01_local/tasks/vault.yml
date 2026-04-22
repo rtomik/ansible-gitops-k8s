@@ -40,6 +40,7 @@
         - { name: 'n8n_db_password', length: 15 }
         - { name: 'donetick_db_password', length: 15 }
         - { name: 'norish_db_password', length: 15 }
+        - { name: 'garage_rpc_secret', length: 32 }
 
       register: generated_tokens
       changed_when: false
@@ -66,6 +67,10 @@
           vault_n8n_db_password: "{{ generated_tokens.results[14].stdout }}"
           vault_donetick_db_password: "{{ generated_tokens.results[15].stdout }}"
           vault_norish_db_password: "{{ generated_tokens.results[16].stdout }}"
+          vault_garage_rpc_secret: "{{ generated_tokens.results[17].stdout }}"
+          # Cloud S3 backup credentials (only needed when postgresql.backup.storage.type: s3)
+          vault_pg_backup_access_key: ""
+          vault_pg_backup_secret_key: ""
 
     # Write unencrypted vault file
     - name: Create temporary unencrypted vault file

@@ -1,0 +1,232 @@
+---
+- name: Configure PostgreSQL S3 Backups
+  when: postgresql.backup.enabled | default(false) | bool
+  block:
+
+    # =========================================================
+    # GARAGE: self-hosted S3 — bootstrap layout, bucket, key
+    # =========================================================
+    - name: Garage bootstrap
+      when:
+        - postgresql.backup.storage.type | default('garage') == 'garage'
+        - deploy_garage | default(false) | bool
+      block:
+        - name: Wait for Garage pod to be ready
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: "{{ garage.namespace }}"
+            label_selectors:
+              - "app.kubernetes.io/name=garage"
+            wait: true
+            wait_condition:
+              type: Ready
+              status: "True"
+            wait_timeout: 300
+          register: garage_pod_info
+
+        - name: Set garage pod name
+          ansible.builtin.set_fact:
+            garage_pod: "{{ garage_pod_info.resources[0].metadata.name }}"
+
+        - name: Get garage node ID and status
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: /garage status
+          register: garage_status
+          changed_when: false
+
+        - name: Parse garage node ID
+          ansible.builtin.set_fact:
+            garage_node_id: "{{ garage_status.stdout | regex_search('([0-9a-f]{16})', '\\1') | first }}"
+
+        - name: Assign garage layout (single-node, zone=dc1)
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage layout assign -z dc1 -c 1G {{ garage_node_id }}"
+          register: layout_assign
+          changed_when: layout_assign.rc == 0
+          failed_when: layout_assign.rc != 0
+          when: "'pending' in garage_status.stdout"
+
+        - name: Get current layout version
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: /garage layout show
+          register: layout_show
+          changed_when: false
+          failed_when: false
+
+        - name: Parse current layout version and compute next
+          ansible.builtin.set_fact:
+            garage_layout_version: "{{ (layout_show.stdout | regex_search('Current cluster layout version: (\\d+)', '\\1') | first | default('0') | int) + 1 }}"
+
+        - name: Apply garage layout
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage layout apply --version {{ garage_layout_version }}"
+          register: layout_apply_result
+          changed_when: layout_apply_result.rc == 0
+          failed_when: layout_apply_result.rc != 0 and 'already' not in (layout_apply_result.stderr | lower)
+
+        - name: Wait for layout to converge
+          ansible.builtin.pause:
+            seconds: 10
+
+        - name: Check existing garage buckets
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: /garage bucket list
+          register: bucket_list
+          changed_when: false
+
+        - name: Create PostgreSQL backup bucket
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage bucket create {{ garage.pg_backup_bucket }}"
+          register: bucket_create
+          changed_when: bucket_create.rc == 0
+          failed_when: bucket_create.rc != 0
+          when: garage.pg_backup_bucket not in bucket_list.stdout
+
+        - name: Check existing garage keys
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: /garage key list
+          register: key_list
+          changed_when: false
+
+        - name: Create access key for CNPG backups
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage key create {{ garage.pg_backup_key_name }}"
+          register: key_create
+          changed_when: key_create.rc == 0
+          failed_when: key_create.rc != 0
+          when: garage.pg_backup_key_name not in key_list.stdout
+
+        - name: Grant bucket access to CNPG key
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage bucket allow --read --write --owner {{ garage.pg_backup_bucket }} --key {{ garage.pg_backup_key_name }}"
+          register: bucket_allow
+          changed_when: bucket_allow.rc == 0
+          failed_when: bucket_allow.rc != 0
+
+        - name: Get access key info
+          kubernetes.core.k8s_exec:
+            namespace: "{{ garage.namespace }}"
+            pod: "{{ garage_pod }}"
+            command: "/garage key info --show-secret {{ garage.pg_backup_key_name }}"
+          register: key_info
+          changed_when: false
+
+        - name: Parse access key ID and secret
+          ansible.builtin.set_fact:
+            _backup_access_key: "{{ key_info.stdout | regex_search('Key ID: (\\S+)', '\\1') | first }}"
+            _backup_secret_key: "{{ key_info.stdout | regex_search('Secret key: (\\S+)', '\\1') | first }}"
+            _backup_region: "{{ garage.region }}"
+            _backup_endpoint: "{{ garage.s3_endpoint }}"
+            _backup_bucket: "{{ garage.pg_backup_bucket }}"
+
+    # =========================================================
+    # CLOUD S3: set facts from config (no bootstrap needed)
+    # =========================================================
+    - name: Set cloud S3 backup facts
+      ansible.builtin.set_fact:
+        _backup_access_key: "{{ postgresql.backup.storage.s3.access_key }}"
+        _backup_secret_key: "{{ postgresql.backup.storage.s3.secret_key }}"
+        _backup_region: "{{ postgresql.backup.storage.s3.region }}"
+        _backup_endpoint: "{{ postgresql.backup.storage.s3.endpoint | default('') }}"
+        _backup_bucket: "{{ postgresql.backup.storage.s3.bucket }}"
+      when: postgresql.backup.storage.type | default('garage') == 's3'
+
+    # =========================================================
+    # COMMON: create K8s secret and configure CNPG
+    # =========================================================
+    - name: Create Kubernetes secret with S3 credentials for CNPG
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cnpg-backup-credentials
+            namespace: "{{ postgresql.namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: ansible
+              cnpg.io/reload: "true"
+          type: Opaque
+          stringData:
+            ACCESS_KEY_ID: "{{ _backup_access_key }}"
+            ACCESS_SECRET_KEY: "{{ _backup_secret_key }}"
+            AWS_REGION: "{{ _backup_region }}"
+
+    - name: Build CNPG barmanObjectStore patch
+      ansible.builtin.set_fact:
+        _cnpg_endpoint_fragment: "{{ ',\"endpointURL\":\"' + _backup_endpoint + '\"' if _backup_endpoint != '' else '' }}"
+
+    - name: Patch CNPG cluster with barmanObjectStore config
+      ansible.builtin.shell: >-
+        kubectl patch cluster {{ postgresql.cluster_name }}
+        -n {{ postgresql.namespace }}
+        --type merge
+        -p '{"spec":{"backup":{"barmanObjectStore":{"destinationPath":"s3://{{ _backup_bucket }}/{{ postgresql.backup.storage.path | default('postgresql') }}"{{ _cnpg_endpoint_fragment }},"s3Credentials":{"accessKeyId":{"name":"cnpg-backup-credentials","key":"ACCESS_KEY_ID"},"secretAccessKey":{"name":"cnpg-backup-credentials","key":"ACCESS_SECRET_KEY"},"region":{"name":"cnpg-backup-credentials","key":"AWS_REGION"}},"wal":{"compression":"{{ postgresql.backup.storage.wal.compression | default('gzip') }}","maxParallel":{{ postgresql.backup.storage.wal.max_parallel | default(4) | int }}},"data":{"compression":"{{ postgresql.backup.storage.compression | default('gzip') }}"}}}}}'
+      register: cnpg_patch
+      changed_when: "'patched' in cnpg_patch.stdout"
+
+    - name: Reload CNPG cluster instances to pick up new credentials
+      ansible.builtin.shell: >-
+        kubectl annotate cluster {{ postgresql.cluster_name }}
+        -n {{ postgresql.namespace }}
+        postgresql.cnpg.io/reloadAt="{{ ansible_date_time.iso8601 }}"
+        --overwrite
+      changed_when: true
+
+    - name: Create CNPG ScheduledBackup
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: postgresql.cnpg.io/v1
+          kind: ScheduledBackup
+          metadata:
+            name: "{{ postgresql.cluster_name }}-daily"
+            namespace: "{{ postgresql.namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            schedule: "{{ postgresql.backup.schedule | default('0 2 * * *') }}"
+            backupOwnerReference: self
+            cluster:
+              name: "{{ postgresql.cluster_name }}"
+            method: barmanObjectStore
+
+    - name: Display backup configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "PostgreSQL backup configured successfully"
+          - "Type: {{ postgresql.backup.storage.type | default('garage') }}"
+          - "Endpoint: {{ _backup_endpoint if _backup_endpoint != '' else 'AWS S3 (default)' }}"
+          - "Bucket: {{ _backup_bucket }}"
+          - "Path: {{ postgresql.backup.storage.path | default('postgresql') }}"
+          - "Schedule: {{ postgresql.backup.schedule | default('0 2 * * *') }}"
+          - "Credentials secret: cnpg-backup-credentials (namespace: {{ postgresql.namespace }})"
+
+  rescue:
+    - name: Display backup configuration failure
+      ansible.builtin.debug:
+        msg:
+          - "PostgreSQL backup configuration failed"
+          - "Type: {{ postgresql.backup.storage.type | default('garage') }}"
+          - "For garage: check that the garage pod is running — kubectl get pods -n {{ garage.namespace }}"
+          - "For s3: verify vault_pg_backup_access_key and vault_pg_backup_secret_key are set"
+          - "Retry: ansible-playbook playbooks/main.yaml --tags apps:garage"
