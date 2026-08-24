@@ -2,6 +2,89 @@ kube-prometheus-stack:
   grafana:
     enabled: false
 
+  alertmanager:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        traefik.ingress.kubernetes.io/router.middlewares: default-default-headers@kubernetescrd
+      hosts:
+        - alertmanager.{{ domain }}
+      paths:
+        - /
+      tls:
+        - hosts:
+            - alertmanager.{{ domain }}
+
+    alertmanagerSpec:
+      replicas: 1
+
+    config:
+      global:
+        resolve_timeout: 5m
+{% if alerting.smtp.enabled %}
+        smtp_smarthost: "{{ alerting.smtp.host }}:{{ alerting.smtp.port }}"
+        smtp_from: "{{ alerting.smtp.from }}"
+        smtp_auth_username: "{{ vault_alert_smtp_user }}"
+        smtp_auth_password: "{{ vault_alert_smtp_password }}"
+        smtp_require_tls: {{ alerting.smtp.require_tls | lower }}
+{% endif %}
+
+      route:
+        group_by: ["alertname", "namespace", "severity"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: "{% if alerting.discord.enabled %}discord{% else %}null{% endif %}"
+        routes:
+          - matchers:
+              - alertname = "Watchdog"
+            receiver: "null"
+{% if alerting.discord.enabled and alerting.smtp.enabled %}
+          - matchers:
+              - severity = "critical"
+            receiver: "discord-and-email"
+{% endif %}
+
+      receivers:
+        - name: "null"
+{% if alerting.discord.enabled %}
+        - name: "discord"
+          discord_configs:
+            - webhook_url: "{{ vault_discord_webhook_url }}"
+              send_resolved: true
+              title: |-
+                {% raw %}[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}{% endraw %}
+
+              message: |-
+                {% raw %}{{ range .Alerts }}**{{ .Annotations.summary }}**
+                {{ .Annotations.description }}
+                Labels: {{ range .Labels.SortedPairs }}• {{ .Name }}: {{ .Value }}
+                {{ end }}{{ end }}{% endraw %}
+{% endif %}
+{% if alerting.discord.enabled and alerting.smtp.enabled %}
+        - name: "discord-and-email"
+          discord_configs:
+            - webhook_url: "{{ vault_discord_webhook_url }}"
+              send_resolved: true
+          email_configs:
+            - to: "{{ email }}"
+              send_resolved: true
+{% elif alerting.smtp.enabled %}
+        - name: "email"
+          email_configs:
+            - to: "{{ email }}"
+              send_resolved: true
+{% endif %}
+
+      inhibit_rules:
+        - source_matchers:
+            - severity = "critical"
+          target_matchers:
+            - severity = "warning"
+          equal: ["alertname", "namespace"]
+
   prometheus:
     ingress:
       enabled: true

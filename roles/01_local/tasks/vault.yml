@@ -71,6 +71,10 @@
           # Cloud S3 backup credentials (only needed when postgresql.backup.storage.type: s3)
           vault_pg_backup_access_key: ""
           vault_pg_backup_secret_key: ""
+          # Alertmanager notification credentials
+          vault_discord_webhook_url: ""   # Discord: Server Settings > Integrations > Webhooks
+          vault_alert_smtp_user: ""       # SMTP username (only needed when alerting.smtp.enabled: true)
+          vault_alert_smtp_password: ""   # SMTP password / app password
 
     # Write unencrypted vault file
     - name: Create temporary unencrypted vault file

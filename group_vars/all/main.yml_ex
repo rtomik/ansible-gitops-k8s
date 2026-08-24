@@ -596,6 +596,22 @@ deploy_prometheus: true
 deploy_grafana: true
 deploy_loki: true
 
+# --- Alerting --- #
+# Alertmanager notification channels
+# Discord: create a webhook in Server Settings > Integrations > Webhooks
+# SMTP: use Gmail App Password, Mailgun, or any SMTP relay
+alerting:
+  discord:
+    enabled: false                         # set false to disable Discord notifications
+
+  smtp:
+    enabled: false                        # set true to also send email on critical alerts
+    host: "smtp.gmail.com"
+    port: 587
+    from: "alerts@mydomain.com"
+    require_tls: true
+
+
 # infrastructure
 deploy_rancher: false
 deploy_authentik: true
@@ -719,6 +735,8 @@ prometheus_crds_version: 19.0.0
 grafana_version: 10.5.12
 loki_version: 6.24.1
 alloy_version: 1.5.1
+checkmk_version: 1.11.0
+checkmk_server_version: 0.1.0
 
 # Apps
 jellyfin_version: 2.5.0
@@ -741,7 +759,7 @@ karakeep_version: 0.0.1
 mealie_version: 0.0.2
 joplin_server_version: 0.0.2
 homeassistant_version: 0.3.30
-norish_version: 0.0.5
+norish_version: 0.0.6
 
 # Server configuration
 perform_full_upgrade: true

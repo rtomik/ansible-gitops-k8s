@@ -2,7 +2,7 @@
 norish:
   image:
     repository: norishapp/norish
-    tag: "v0.17.3-beta"
+    tag: "v0.20.0-beta"
     pullPolicy: IfNotPresent
 
   ingress:
@@ -29,7 +29,6 @@ norish:
   config:
     authUrl: "https://norish.{{ domain }}"
     trustedOrigins: "http://192.168.1.100:3000,https://norish.{{ domain }}"
-    chromeWsEndpoint: "ws://127.0.0.1:9222"
     masterKey:
       value: "cp6eVbe4ddmJxlJCJyux5Nlk39gbJR3M9mWjAqEon1c="
 {% if deploy_authentik %}
