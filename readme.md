@@ -23,7 +23,7 @@ In this project, we use ArgoCD as our GitOps engine to automatically deploy and 
 |----------|-------------|
 | Infrastructure | - KubeVIP (LoadBalancer)<br>- Traefik (Ingress Controller)<br>- Longhorn (Distributed Block Storage)<br>- CloudNativePG (Central PostgreSQL)<br>- Dragonfly (Central Redis Cache)<br>- Garage (Self-hosted S3 Object Store)<br>- Velero (Backup & Restore) |
 | GitOps & Management | - ArgoCD (GitOps CD)<br>- Rancher (Kubernetes Management)<br>- Gitea (Source Control)<br>- Renovate (Dependency Automation)|
-| Security & Access | - Authentik (SSO/IAM)<br>- Tailscale (VPN)<br>- cert-manager (TLS Certificates) |
+| Security & Access | - Authentik (SSO/IAM)<br>- Tailscale (VPN)<br>- cert-manager (TLS Certificates)<br>- AdGuard Home (Ad-blocking DNS) |
 | Monitoring & Observability | - Prometheus (Metrics)<br>- Grafana (Visualization)<br>- Loki (Log Aggregation)<br>- Alloy (Log Collection) |
 | Media & Entertainment | - Jellyfin (Media Server)<br>- Jellyseerr (Media Requests)<br>- Radarr (Movie Management)<br>- Sonarr (TV Management)<br>- Prowlarr (Indexer Manager)<br>- qBittorrent (Download Client)<br>- Audiobookshelf (Audiobook Server) |
 | Productivity & Organization | - Paperless-ngx (Document Management)<br>- Donetick (Task Management)<br>- Joplin (Note Taking)<br>- Mealie (Recipe Manager)<br>- Recipya (Recipe Manager)<br>- Lubelogger (Vehicle Maintenance) |

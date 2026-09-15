@@ -640,7 +640,16 @@ deploy_norish: true
 deploy_mealie: false
 deploy_recipya: false
 
+# Networking
+deploy_adguard_home: false
+
 # ----- APP Settings --------- #
+
+# --- AdGuard Home --- #
+# Static LAN IP for the DNS service, assigned via KubeVIP (like the Traefik LoadBalancer IP).
+# Point your router/clients' DNS at this IP for network-wide ad blocking.
+adguard_home:
+  dns_vip: "192.168.0.201"
 
 # --- Home Assistant --- #
 # If you want to additional mount to the home assistant pod for example for zigbee gateway usb dongle
@@ -760,6 +769,7 @@ mealie_version: 0.0.2
 joplin_server_version: 0.0.2
 homeassistant_version: 0.3.30
 norish_version: 0.0.6
+adguard_home_version: 0.0.2
 
 # Server configuration
 perform_full_upgrade: true

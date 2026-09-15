@@ -163,6 +163,12 @@ app_definitions:
     version: "{{ norish_version }}"
     repo: "https://rtomik.github.io/helm-charts"
     namespace: "apps"
+  adguard-home:
+    enabled: "{{ deploy_adguard_home }}"
+    chart_name: "adguard-home"
+    version: "{{ adguard_home_version }}"
+    repo: "https://rtomik.github.io/helm-charts"
+    namespace: "apps"
 
 # Filter for enabled apps only
 enabled_apps: "{{ app_definitions | dict2items |
