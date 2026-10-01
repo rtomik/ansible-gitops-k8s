@@ -748,11 +748,11 @@ checkmk_version: 1.11.0
 checkmk_server_version: 0.1.0
 
 # Apps
-jellyfin_version: 2.5.0
+jellyfin_version: 3.2.0
 homepage_version: 2.1.0
 audiobookshelf_version: 0.0.1
 openwebui_version: 5.24.0
-donetick_version: 1.0.6
+donetick_version: 1.1.0
 tandoor_version: 0.9.9
 paperless_ngx_version: 0.0.4
 recipya_version: 0.0.2
